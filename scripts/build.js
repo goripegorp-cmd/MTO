@@ -42,6 +42,13 @@ async function nws(){
   const f=(d.features||[]).filter(x=>x.geometry).slice(0,120);
   w("nws.json",{t:now,type:"FeatureCollection",features:f},f.length+" vigilances");}
 
+/* Les contours bruts comptent jusqu'a 126 000 sommets : on les simplifie
+   a 48 points maximum sans supprimer aucune zone. Memoire divisee par 3
+   cote navigateur, precision visuellement identique a l'echelle carte. */
+function simp(r,k){ if(r.length<=k) return r; const s=r.length/k,o=[];
+  for(let i=0;i<k;i++)o.push(r[Math.floor(i*s)]); o.push(r[r.length-1]); return o; }
+const simpGeo=c=>Array.isArray(c[0])&&Array.isArray(c[0][0])?c.map(simpGeo):simp(c,48);
+
 async function effis(){
   const out={t:now,type:"FeatureCollection",features:[]};
   for(const b of ["-11,35,32,60","-8,29,42,46"]){
@@ -51,7 +58,8 @@ async function effis(){
         f.properties={COMMUNE:p.COMMUNE,PROVINCE:p.PROVINCE,COUNTRY:p.COUNTRY,
           AREA_HA:p.AREA_HA,FIREDATE:p.FIREDATE,LASTUPDATE:p.LASTUPDATE};
         const r=c=>Array.isArray(c[0])?c.map(r):[p3(c[0]),p3(c[1])];
-        if(f.geometry&&f.geometry.coordinates)f.geometry.coordinates=r(f.geometry.coordinates);
+        if(f.geometry&&f.geometry.coordinates)
+          f.geometry.coordinates=simpGeo(r(f.geometry.coordinates));
         out.features.push(f);});
     }catch(e){console.log("  zone "+b+" indisponible");}}
   if(out.features.length)w("effis.json",out,out.features.length+" perimetres");}
