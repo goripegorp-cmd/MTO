@@ -1,1 +1,117 @@
+name: Donnees
 
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-refresh
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Type
+        id: k
+        run: |
+          if [ "${{ github.event.schedule }}" = "17 4 * * *" ]; then
+            echo "kind=slow" >> $GITHUB_OUTPUT
+          else
+            echo "kind=fast" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Script
+        run: |
+          mkdir -p scripts
+          cat > scripts/build.js <<'EOSCRIPT'
+          const fs=require("fs"),P=require("path");
+          const OUT=P.join(process.cwd(),"data");fs.mkdirSync(OUT,{recursive:true});
+          const now=Date.now(),p3=v=>Math.round(v*1e3)/1e3;
+          async function get(u,ms,h){const c=new AbortController(),t=setTimeout(()=>c.abort(),ms||45e3);
+            try{const r=await fetch(u,{signal:c.signal,headers:h||{}});if(!r.ok)throw new Error("HTTP "+r.status);return await r.json();}
+            finally{clearTimeout(t);}}
+          function w(n,o,l){const s=JSON.stringify(o);fs.writeFileSync(P.join(OUT,n),s);
+            console.log("  OK "+n+" "+Math.round(s.length/1024)+" ko "+l);}
+
+          async function quakes(){
+            const d=await get("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson",40e3);
+            const q=(d.features||[]).map(f=>{const p=f.properties,c=f.geometry.coordinates;
+              return [p.mag,p.place||"",p.time,Math.round(c[2]),p3(c[1]),p3(c[0]),p.url||""];})
+              .filter(x=>x[0]!=null).sort((a,b)=>b[2]-a[2]);
+            w("quakes.json",{t:now,q},q.length+" seismes");}
+
+          async function eonet(){
+            const d=await get("https://eonet.gsfc.nasa.gov/api/v3/events?status=open",60e3),MAX=90*864e5;
+            const events=(d.events||[]).map(e=>{
+              const g=(e.geometry||[]).filter(x=>x.type==="Point"&&Array.isArray(x.coordinates));
+              if(!g.length||now-Date.parse(g[g.length-1].date)>MAX)return null;
+              const c=(e.categories&&e.categories[0]&&e.categories[0].id)||"";
+              const k=c==="severeStorms"?(g.length>20?g.slice(-20):g):[g[0],g[g.length-1]];
+              const seen=new Set(),u=[];k.forEach(x=>{if(!seen.has(x.date)){seen.add(x.date);u.push(x);}});
+              return {t:e.title,c:c,s:(e.sources&&e.sources[0]&&e.sources[0].url)||"",
+                g:u.map(x=>[p3(x.coordinates[1]),p3(x.coordinates[0]),Math.round(Date.parse(x.date)/6e4)])};
+            }).filter(Boolean);
+            w("eonet.json",{t:now,events},events.length+" evenements (90j)");}
+
+          async function gdacs(){
+            const d=await get("https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP",90e3);
+            const f=(d.features||[]).filter(x=>x.geometry&&x.geometry.type==="Point").map(x=>{const p=x.properties||{};
+              return {t:p.eventtype,a:p.alertlevel,co:p.country||"",n:p.name||p.eventname||p.description||"",
+                s:(p.severitydata&&p.severitydata.severitytext)||"",d:p.fromdate||"",
+                u:(p.url&&(p.url.report||p.url.details))||"",
+                c:[p3(x.geometry.coordinates[1]),p3(x.geometry.coordinates[0])]};});
+            w("gdacs.json",{t:now,f},f.length+" alertes");}
+
+          async function nws(){
+            const d=await get("https://api.weather.gov/alerts/active?status=actual&severity=Extreme,Severe",45e3,
+              {Accept:"application/geo+json","User-Agent":"planete-en-direct"});
+            const f=(d.features||[]).filter(x=>x.geometry).slice(0,120);
+            w("nws.json",{t:now,type:"FeatureCollection",features:f},f.length+" vigilances");}
+
+          async function effis(){
+            const out={t:now,type:"FeatureCollection",features:[]};
+            for(const b of ["-11,35,32,60","-8,29,42,46"]){
+              try{const d=await get("https://maps.wild-fire.eu/effis?service=WFS&version=1.0.0&request=GetFeature"
+                +"&typeName=ms:modis.ba.poly.season&outputFormat=geojson&maxFeatures=600&srsName=EPSG:4326&bbox="+b,120e3);
+                (d.features||[]).forEach(f=>{const p=f.properties||{};
+                  f.properties={COMMUNE:p.COMMUNE,PROVINCE:p.PROVINCE,COUNTRY:p.COUNTRY,
+                    AREA_HA:p.AREA_HA,FIREDATE:p.FIREDATE,LASTUPDATE:p.LASTUPDATE};
+                  const r=c=>Array.isArray(c[0])?c.map(r):[p3(c[0]),p3(c[1])];
+                  if(f.geometry&&f.geometry.coordinates)f.geometry.coordinates=r(f.geometry.coordinates);
+                  out.features.push(f);});
+              }catch(e){console.log("  zone "+b+" indisponible");}}
+            if(out.features.length)w("effis.json",out,out.features.length+" perimetres");}
+
+          (async()=>{const k=process.argv[2]||"fast";
+            const T=k==="slow"?[["effis",effis]]:[["quakes",quakes],["eonet",eonet],["gdacs",gdacs],["nws",nws]];
+            for(const [n,f] of T){try{await f();}catch(e){console.log("  ECHEC "+n+" : "+e.message);}}
+            fs.writeFileSync(P.join(OUT,"meta.json"),JSON.stringify({built:now,kind:k}));
+            process.exit(0);})();
+          EOSCRIPT
+
+      - name: Donnees
+        run: node scripts/build.js ${{ steps.k.outputs.kind }}
+
+      - name: Publier
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/ scripts/
+          if git diff --staged --quiet; then
+            echo "Aucun changement"
+          else
+            git commit -m "Donnees $(date -u '+%Y-%m-%d %H:%M')"
+            git pull --rebase --autostash origin main || true
+            git push
+          fi
