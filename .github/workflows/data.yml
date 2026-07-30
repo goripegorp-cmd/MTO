@@ -41,7 +41,9 @@ jobs:
           async function get(u,ms,h){const c=new AbortController(),t=setTimeout(()=>c.abort(),ms||45e3);
             try{const r=await fetch(u,{signal:c.signal,headers:h||{}});if(!r.ok)throw new Error("HTTP "+r.status);return await r.json();}
             finally{clearTimeout(t);}}
+          const WROTE=[];
           function w(n,o,l){const s=JSON.stringify(o);fs.writeFileSync(P.join(OUT,n),s);
+            WROTE.push(n.replace(".json",""));
             console.log("  OK "+n+" "+Math.round(s.length/1024)+" ko "+l);}
 
           async function quakes(){
@@ -104,7 +106,12 @@ jobs:
           (async()=>{const k=process.argv[2]||"fast";
             const T=k==="slow"?[["effis",effis]]:[["quakes",quakes],["eonet",eonet],["gdacs",gdacs],["nws",nws]];
             for(const [n,f] of T){try{await f();}catch(e){console.log("  ECHEC "+n+" : "+e.message);}}
-            fs.writeFileSync(P.join(OUT,"meta.json"),JSON.stringify({built:now,kind:k}));
+            /* On declare la liste exacte des fichiers disponibles : la carte ne
+               demandera plus un fichier absent, donc plus aucun 404 dans le journal. */
+            let has=[];
+            try{ const m=JSON.parse(fs.readFileSync(P.join(OUT,"meta.json"),"utf8")); has=m.files||[]; }catch(e){}
+            fs.readdirSync(OUT).forEach(f=>{ if(f.endsWith(".json")&&f!=="meta.json"){ const n=f.replace(".json",""); if(has.indexOf(n)<0) has.push(n); } });
+            fs.writeFileSync(P.join(OUT,"meta.json"),JSON.stringify({built:now,kind:k,files:has}));
             process.exit(0);})();
           EOSCRIPT
 
