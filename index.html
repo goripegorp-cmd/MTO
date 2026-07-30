@@ -244,6 +244,23 @@ header{display:flex;align-items:center;gap:8px;padding:0 10px;height:46px;
 .scale{display:flex;border-radius:2px;overflow:hidden;height:8px}
 .scale i{flex:1}
 .scale-l{display:flex;justify-content:space-between;font-size:10px;color:var(--t3);margin-top:5px}
+/* Légende de FORMES : reproduit exactement ce qui est dessiné sur la carte,
+   pour qu'on puisse comparer sans deviner. */
+.lgshapes{display:flex;flex-direction:column;gap:7px;font-size:10.5px;color:var(--t2);line-height:1.35}
+.lgshapes span{display:flex;align-items:center;gap:9px}
+.lgshapes b{color:var(--t1);font-weight:600}
+.lgs{position:relative;width:17px;height:17px;flex:0 0 auto;background:rgba(9,14,24,.88);
+  border:2px solid var(--c);border-radius:50%}
+.lgs.actif{--c:#ff3d1f}
+.lgs.extinction{--c:#c8cf4a;overflow:hidden}
+.lgs.extinction::after{content:"";position:absolute;left:0;right:0;bottom:0;height:45%;
+  background:#c8cf4a;opacity:.3}
+.lgs.zombie{--c:#7d8ba6;border-radius:3px;border-style:dashed}
+.lgs.alRouge{--c:#ff2e63;background:#ff2e63}
+.lgs.alOrange{--c:#ff9f43;background:#ff9f43}
+.lgs.alClos{--c:#8494ad;background:transparent;border-style:dashed;border-width:1.6px}
+.lghint{font-size:10px;color:var(--t3);line-height:1.5;margin:8px 0 0}
+
 .wlegend{display:flex;align-items:center;gap:5px 13px;font-size:10.5px;color:var(--t3);flex-wrap:wrap}
 .wlegend span{display:inline-flex;align-items:center;gap:5px}
 .wlegend i{width:14px;height:4px;border-radius:2px;display:inline-block;flex:0 0 auto}
@@ -446,20 +463,42 @@ body.base-light #map{background:#cfd8e3}
 /* Repère de sinistre : remplace l'ancien contour d'enveloppe. Il porte la
    surface réellement brûlée et son état par la couleur ; un anneau plein pour
    un feu actif, pointillé pour un feu zombie qui peut se rallumer. */
+/* ---------- Repère de sinistre : la FORME dit l'état ----------
+   La couleur seule ne suffisait pas. Sur une carte couverte de cercles — feux,
+   séismes, alertes — on ne distinguait plus ce qui brûle de ce qui a brûlé, et
+   c'est précisément l'erreur à ne pas commettre : montrer un rond rouge orangé
+   pour un feu arrêté fait croire à un sinistre en cours.
+   Trois formes franches, reconnaissables d'un coup d'œil et même sans percevoir
+   les couleurs :
+     ROND PLEIN, qui respire   le feu brûle en ce moment
+     ROND À MOITIÉ REMPLI      les secours sont dessus, l'activité recule
+     CARRÉ EN POINTILLÉ        le sol a brûlé, plus de front, mais ça peut repartir */
 .fbadge{position:absolute;transform:translate(-50%,-50%);
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  width:34px;height:34px;border-radius:50%;
-  background:rgba(9,14,24,.86);border:2px solid var(--c,#888);color:var(--c,#888);
-  box-shadow:0 1px 5px rgba(0,0,0,.6);cursor:pointer;line-height:1}
+  width:34px;height:34px;
+  background:rgba(9,14,24,.88);border:2px solid var(--c,#888);color:var(--c,#888);
+  box-shadow:0 1px 5px rgba(0,0,0,.6);cursor:pointer;line-height:1;position:absolute}
 .fbadge.big{width:42px;height:42px;border-width:2.5px}
-.fbadge.zombie{border-style:dashed;background:rgba(9,14,24,.62)}
 .fbadge b{font:700 11px/1 var(--mono);color:#fff;font-variant-numeric:tabular-nums}
 .fbadge.big b{font-size:13px}
 .fbadge i{font:500 7.5px/1 system-ui,sans-serif;font-style:normal;letter-spacing:.06em;
   margin-top:1px;opacity:.85}
-.fbadge.actif{animation:fpulse 2.4s ease-in-out infinite}
+
+/* EN COURS — rond plein qui respire */
+.fbadge.actif{border-radius:50%;animation:fpulse 2.4s ease-in-out infinite}
 @keyframes fpulse{0%,100%{box-shadow:0 1px 5px rgba(0,0,0,.6)}
-  50%{box-shadow:0 1px 5px rgba(0,0,0,.6),0 0 0 4px rgba(255,61,31,.18)}}
+  50%{box-shadow:0 1px 5px rgba(0,0,0,.6),0 0 0 5px rgba(255,61,31,.22)}}
+
+/* EN EXTINCTION — rond dont la moitié basse est remplie : l'activité retombe */
+.fbadge.extinction{border-radius:50%;overflow:hidden}
+.fbadge.extinction::after{content:"";position:absolute;left:0;right:0;bottom:0;height:45%;
+  background:var(--c,#888);opacity:.28;pointer-events:none}
+
+/* ZOMBIE — carré en pointillé : forme différente, donc jamais confondu avec un
+   feu en cours, même en vision périphérique ou en noir et blanc. */
+.fbadge.zombie{border-radius:5px;border-style:dashed;background:rgba(9,14,24,.66);opacity:.92}
+.fbadge.zombie b{color:#cfd8e6}
+
 @media (prefers-reduced-motion:reduce){.fbadge.actif{animation:none}}
 
 /* État d'un sinistre : plaque franche, lisible avant même de lire la phrase */
@@ -947,16 +986,27 @@ body.base-light .leaflet-control-scale-line{background:rgba(255,255,255,.8)!impo
         </div>
 
         <div class="lg">
-          <span class="lg-t">Incendie · état réel</span>
-          <div class="wlegend">
-            <span><i style="background:#ff1744"></i>en cours, en progression</span>
-            <span><i style="background:#ff6d00"></i>en cours, stable</span>
-            <span><i style="background:#c8cf4a"></i>en baisse</span>
-            <span><i style="background:#e0a33c"></i>déclinant</span>
-            <span><i style="background:#b5a06a"></i>extinction probable</span>
-            <span><i style="background:#7d8ba6"></i>éteint (trait pointillé)</span>
-            <span><i style="background:#4a3325"></i>surface déjà brûlée</span>
+          <span class="lg-t">Incendie · la forme dit l’état</span>
+          <div class="lgshapes">
+            <span><b class="lgs actif"></b>ROND qui respire — <b>ça brûle en ce moment</b></span>
+            <span><b class="lgs extinction"></b>ROND à moitié rempli — les secours sont dessus, l’activité recule</span>
+            <span><b class="lgs zombie"></b>CARRÉ en pointillé — <b>le sol a brûlé, plus de front</b>, mais ça peut repartir</span>
           </div>
+          <p class="lghint">La couleur seule ne suffisait pas : sur une carte couverte de cercles, on ne
+            distinguait plus ce qui brûle de ce qui a brûlé. La forme se reconnaît d’un coup d’œil, même
+            sans percevoir les couleurs.</p>
+        </div>
+
+        <div class="lg">
+          <span class="lg-t">Alerte officielle · état réel</span>
+          <div class="lgshapes">
+            <span><b class="lgs alRouge"></b>Disque plein rouge — alerte <b>ROUGE en cours</b></span>
+            <span><b class="lgs alOrange"></b>Disque plein orange — alerte <b>ORANGE en cours</b></span>
+            <span><b class="lgs alClos"></b>Cercle creux en pointillé — <b>événement CLOS</b> par les autorités</span>
+          </div>
+          <p class="lghint">Un événement clos n’est plus une alerte : il reste affiché à titre d’historique,
+            sans son emprise. Une surface brûlée peut toutefois connaître des reprises plusieurs jours après
+            la fin de l’alerte.</p>
         </div>
 
         <div class="lg">
@@ -1802,6 +1852,15 @@ let omBlocked=0, omStrikes=0;
 const OM_HOSTS=["api.open-meteo.com","air-quality-api.open-meteo.com",
   "flood-api.open-meteo.com","geocoding-api.open-meteo.com","marine-api.open-meteo.com"];
 const OM_COOL=[0, 180000, 600000, 1800000];   /* 3 min, 10 min, 30 min */
+/* Open-Meteo a DEUX plafonds : un horaire et un QUOTIDIEN. Le second se
+   reconnaît à sa raison, « Daily API request limit exceeded. Please try again
+   tomorrow. » Attendre trois minutes n'a alors aucun sens : rien ne reviendra
+   avant le lendemain. On suspend donc jusqu'à minuit, et on le dit clairement
+   plutôt que de laisser croire à une panne passagère. */
+let omDaily=0;
+function omMinuit(){
+  const d=new Date(); d.setHours(24,0,30,0); return d.getTime();
+}
 function omPaused(){
   const t=Date.now();
   return OM_HOSTS.some(h=>{ const g=NET_GUARD.get(h); return !!(g && g.until>t); });
@@ -1811,20 +1870,32 @@ function omPaused(){
    continuait d'interroger le service — d'où deux erreurs 429 à cinq secondes
    d'intervalle dans le journal. Elle suspend maintenant réellement le service,
    avec une attente qui s'allonge à chaque refus. */
-function omQuotaHit(){
-  omStrikes=Math.min(3, omStrikes+1);
-  const cool=OM_COOL[omStrikes];
-  const until=Date.now()+cool;
+function omQuotaHit(quotidien){
+  let until, texte, journal;
+  if(quotidien){
+    omDaily=omMinuit();
+    until=omDaily;
+    const h=Math.round((until-Date.now())/3600e3);
+    texte="Plafond météo JOURNALIER atteint sur votre connexion. Le service gratuit ne répondra plus "
+      + "avant demain (environ "+h+" h). Le vent, la qualité de l’air, les incendies, les séismes et les "
+      + "alertes officielles continuent de fonctionner : ils sont pré-calculés et ne dépendent pas de ce service.";
+    journal="Plafond Open-Meteo QUOTIDIEN epuise pour cette adresse IP. Suspendu jusqu'a demain ("
+      + h + " h). Les couches pre-calculees ne sont pas affectees.";
+  }else{
+    omStrikes=Math.min(3, omStrikes+1);
+    const cool=OM_COOL[omStrikes];
+    until=Date.now()+cool;
+    const min=Math.round(cool/60000);
+    texte="Quota météo horaire atteint sur votre connexion — le service gratuit limite à 5 000 mesures "
+      + "par heure. Les requêtes météo sont suspendues "+min+" min, puis reprendront seules. "
+      + "Incendies, séismes et alertes continuent de fonctionner normalement.";
+    journal="Quota Open-Meteo horaire epuise. Service suspendu "+min+" min pour ne pas insister.";
+  }
   OM_HOSTS.forEach(h=>NET_GUARD.set(h,{n:0,until}));
   if(Date.now()-omBlocked < 600000) return;      /* message dédupliqué */
   omBlocked=Date.now();
-  const min=Math.round(cool/60000);
-  toast("Quota météo atteint sur votre connexion — le service gratuit limite à 5 000 mesures par heure. "
-    + "Les requêtes météo sont suspendues "+min+" min, puis reprendront seules. "
-    + "Incendies, séismes et alertes continuent de fonctionner normalement.", 12000);
-  if(window.__diagPush) window.__diagPush("ALERTE",
-    "Quota Open-Meteo epuise pour cette adresse IP (5 000 mesures/heure). Service suspendu "
-    + min + " min pour ne pas insister. Ce n'est pas un defaut de la carte.");
+  toast(texte, 14000);
+  if(window.__diagPush) window.__diagPush("ALERTE", journal);
 }
 function netFail(u, cool){
   const h=netHost(u), g=NET_GUARD.get(h)||{n:0,until:0};
@@ -1904,7 +1975,8 @@ function fetchJSON(url, headers, ttl, timeout, _retry){
         if(/open-meteo/.test(url)){
           let raison="";
           try{ const j=await r.clone().json(); raison=String((j&&j.reason)||""); }catch(e){}
-          if(r.status===429 || /limit|quota|exceed|minutely|hourly|daily/i.test(raison)) omQuotaHit();
+          if(r.status===429 || /limit|quota|exceed|minutely|hourly|daily/i.test(raison))
+            omQuotaHit(/daily|tomorrow/i.test(raison));
           if(raison && window.__diagPush)
             window.__diagPush("RÉSEAU","Open-Meteo refuse ("+r.status+") : "+raison.slice(0,180));
         }
@@ -1917,7 +1989,7 @@ function fetchJSON(url, headers, ttl, timeout, _retry){
       /* Un appel météo qui aboutit signifie que le plafond est repassé : on
          remet le compteur d'échecs à zéro pour ne pas garder une attente de
          trente minutes après un simple pic passager. */
-      if(/open-meteo/.test(url) && omStrikes) omStrikes=0;
+      if(/open-meteo/.test(url) && (omStrikes||omDaily)){ omStrikes=0; omDaily=0; }
       if(ttl){
         NET_CACHE.set(url,{v:v,exp:Date.now()+ttl});
         if(NET_CACHE.size>140) NET_CACHE.delete(NET_CACHE.keys().next().value);
@@ -2028,7 +2100,16 @@ window.__preState=()=>PRE;
    le vide puisque le monde s'y répète. */
 const MERC_MAX = 85.05112878;
 const map = L.map("map", {zoomControl:false, worldCopyJump:true, zoomSnap:.5,
-  minZoom:2, maxZoom:20,
+  /* Zoom maximal ramené à 19. J'étais monté à 20 en croyant offrir un cran de
+     plus : c'était une erreur. Vérifié sur quatre lieux très différents — Paris,
+     les Landes, l'Everest — les sources servent de vraies images jusqu'au zoom
+     19 (9 à 19 ko par tuile), mais au zoom 20 elles renvoient TOUTES exactement
+     2 521 octets : une image grise portant « Map data not yet available ».
+     Ce n'est pas une erreur réseau, c'est une réponse valide, donc rien ne
+     pouvait la filtrer. La seule façon de ne jamais l'afficher est de ne jamais
+     l'atteindre. Le zoom 19 correspond déjà à une trentaine de centimètres par
+     pixel : le bâtiment et l'arbre y sont parfaitement lisibles. */
+  minZoom:2, maxZoom:19,
   maxBounds: L.latLngBounds([-MERC_MAX, -1080], [MERC_MAX, 1080]),
   maxBoundsViscosity: 1,
   preferCanvas:true}).setView([22, 8], mqMobile.matches ? 2 : 2.5);
@@ -2091,15 +2172,15 @@ const BASES = {
      peut donc continuer d'approcher au lieu de heurter un mur, et une couche
      dont la source s'arrête plus tôt n'affiche plus de trou. */
   light: L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}"+HD+".png",
-    {attribution:"© OpenStreetMap © CARTO", subdomains:"abcd", maxNativeZoom:19, maxZoom:20,
+    {attribution:"© OpenStreetMap © CARTO", subdomains:"abcd", maxNativeZoom:19, maxZoom:19,
      updateWhenIdle:true, keepBuffer:1, crossOrigin:true}),
   dark: L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}"+HD+".png",
-    {attribution:"© OpenStreetMap © CARTO", subdomains:"abcd", maxNativeZoom:19, maxZoom:20,
+    {attribution:"© OpenStreetMap © CARTO", subdomains:"abcd", maxNativeZoom:19, maxZoom:19,
      updateWhenIdle:true, keepBuffer:1, crossOrigin:true}),
   /* Imagerie Esri : vérifié, elle sert bien le zoom 19 avec de vraies images
      (11 à 17 ko par tuile en zone rurale), soit le niveau du bâtiment. */
   sat: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    {attribution:"© Esri, Maxar, Earthstar Geographics", maxNativeZoom:19, maxZoom:20,
+    {attribution:"© Esri, Maxar, Earthstar Geographics", maxNativeZoom:19, maxZoom:19,
      updateWhenIdle:true, keepBuffer:2})
 };
 let baseCur = "light";
@@ -2695,7 +2776,7 @@ async function loadAlerts(){
 
      Tolérance d'âge portée à douze heures : c'est la seule source officielle, et
      mieux vaut une alerte datée affichée avec son âge que pas d'alerte du tout. */
-  let nRouge=0, nOrange=0;
+  let nRouge=0, nOrange=0, nClos=0;
   try{
     const pre=await preload("gdacs", 12*3600e3);
     if(!pre || !pre.f){
@@ -2715,17 +2796,33 @@ async function loadAlerts(){
         const lat=x.c[0], lon=x.c[1];
         if(!inBbox(lat,lon)) continue;
         const grave = x.a==="Red" || x.a==="Orange";
-        if(x.a==="Red") nRouge++; else if(x.a==="Orange") nOrange++;
+        /* ÉTAT RÉEL DE L'ÉVÉNEMENT.
+           GDACS publie `iscurrent` : l'événement est-il toujours en cours, ou
+           les autorités l'ont-elles clos ? Mesuré sur le flux du jour : 4 des
+           12 alertes graves étaient DÉJÀ CLOSES, dont un cyclone tropical sur
+           la Chine et les Philippines — et elles étaient dessinées exactement
+           comme les alertes actives. Quelqu'un qui regardait la carte croyait
+           que c'était en cours. C'est la faute à ne pas commettre.
+           Un événement clos garde un cercle creux en pointillé : il reste
+           consultable, il ne se lit plus comme une alerte en cours. */
+        const clos = !x.cur;
+        if(clos) nClos++;
+        else if(x.a==="Red") nRouge++;
+        else if(x.a==="Orange") nOrange++;
         if(!grave && !vertsVisibles) continue;
         /* Hors du champ de vision : rien à dessiner. */
         if(lat<bA.getSouth()||lat>bA.getNorth()||lon<bA.getWest()||lon>bA.getEast()) continue;
-        const [lvl,col]=GLVL[x.a]||["","#8fa4cc"];
+        const [lvl,colBrut]=GLVL[x.a]||["","#8fa4cc"];
+        const col = clos ? "#8494ad" : colBrut;
 
         /* Emprise réelle de l'alerte, publiée par GDACS. On ne la trace que pour
            les niveaux rouge et orange : sur 341 alertes dont 329 vertes, dessiner
            toutes les emprises reviendrait à recouvrir la carte de rectangles pour
            des événements sans portée. */
-        if(grave && x.bb){
+        /* L'emprise n'est tracée que pour une alerte grave ENCORE EN COURS :
+           dessiner la zone d'un événement clos reviendrait à désigner une
+           région comme menacée alors qu'elle ne l'est plus. */
+        if(grave && !clos && x.bb){
           const [w,s0,e,nn]=x.bb;
           if(Math.abs(e-w)<170){
             L.rectangle([[s0,w],[nn,e]],{renderer:cnv,color:col,weight:1.4,
@@ -2736,17 +2833,25 @@ async function loadAlerts(){
         /* Une alerte verte est une information, pas une alerte : petit point sourd.
            Rouge et orange sont dessinées franchement, elles doivent sauter aux yeux. */
         L.circleMarker([lat,lon],{renderer:cnv,
-          radius: x.a==="Red"?11:x.a==="Orange"?9:4.5,
-          color:col, weight: grave?3:1.5,
-          fillColor:"#0d1830", fillOpacity: grave?.92:.55})
-          .bindPopup(`<div class="pp-t" style="color:${col}">${ic("siren","x18")}${esc(GTYPE[x.t]||x.t||"Événement")}</div>
-            <div class="stbadge" style="--c:${col}">ALERTE ${lvl.toUpperCase()}${x.sc?" · score "+x.sc.toFixed(1):""}</div>
+          radius: clos ? (grave?7:3.5) : (x.a==="Red"?11:x.a==="Orange"?9:4.5),
+          color:col, weight: clos?1.6:(grave?3:1.5),
+          /* Cercle CREUX et pointillé pour un événement clos : il ne peut plus
+             être pris pour une alerte en cours, même du coin de l'œil. */
+          dashArray: clos?"4 3":null,
+          fillColor:"#0d1830", fillOpacity: clos?0:(grave?.92:.55)})
+          .bindPopup(`<div class="pp-t" style="color:${col}">${ic(clos?"check":"siren","x18")}${esc(GTYPE[x.t]||x.t||"Événement")}</div>
+            <div class="stbadge" style="--c:${col}">${clos
+              ? "ÉVÉNEMENT CLOS"
+              : "ALERTE "+lvl.toUpperCase()+(x.sc?" · score "+x.sc.toFixed(1):"")}</div>
+            ${clos?`<div class="pp-warn">Cet événement a été <b>clos par les autorités</b> qui l’avaient déclaré. Il n’est plus une alerte en cours. Il reste affiché à titre d’historique, en cercle creux et pointillé.${x.t==="WF"?" Attention : une surface brûlée peut connaître des reprises de feu plusieurs jours après la fin de l’alerte.":""}</div>`:""}
             <div class="pp-cat">${esc(x.co||"")}</div>
             <div class="pp-row"><b>${esc(x.n||"")}</b></div>
             ${x.s&&x.s!==x.n?`<div class="pp-row" style="color:#b9c8e8">${esc(x.s)}</div>`:""}
             ${x.d?`<div class="pp-row">Depuis le <b>${fmtDate(x.d)}</b>${x.cur?"":" · <span style=\"color:#8fa4cc\">événement clos</span>"}</div>`:""}
-            <div class="pp-row" style="color:#8fa4cc;font-size:11.5px">${grave
-              ? "Alerte <b>officielle</b> graduée par l’ONU et la Commission européenne selon l’impact humanitaire estimé. C’est une catastrophe confirmée."
+            <div class="pp-row" style="color:#8fa4cc;font-size:11.5px">${clos
+              ? "Niveau atteint pendant l’épisode : <b>"+lvl+"</b>. L’événement est terminé."
+              : grave
+              ? "Alerte <b>officielle et EN COURS</b>, graduée par l’ONU et la Commission européenne selon l’impact humanitaire estimé. C’est une catastrophe confirmée, actuellement active."
               : "Niveau <b>vert</b> : événement détecté et publié, mais dont l’impact humanitaire estimé reste faible. Information, pas alerte."}</div>
             ${x.u?`<a class="pp-link" href="${esc(x.u)}" target="_blank" rel="noopener">Rapport officiel GDACS${ic("external","x12 xl")}</a><br>`:""}
             ${x.cap?`<a class="pp-link" href="${esc(x.cap)}" target="_blank" rel="noopener">Alerte normalisée CAP${ic("external","x12 xl")}</a>`:""}
@@ -2783,11 +2888,15 @@ async function loadAlerts(){
   /* Le compteur annonce ce qui compte : les alertes RÉELLEMENT graves. Afficher
      « 341 » laissait croire à trois cents catastrophes en cours, alors que 329
      d'entre elles sont de niveau vert, c'est-à-dire sans portée humanitaire. */
+  /* Le compteur n'annonce que les alertes RÉELLEMENT EN COURS. Compter un
+     événement clos parmi les alertes graves reviendrait à annoncer une
+     catastrophe qui n'existe plus. Les clos sont mentionnés à part. */
   const graves=nRouge+nOrange;
   setC("c-alerts", graves ? (nRouge?nRouge+" rouge"+(nRouge>1?"s":""):"")
                             + (nRouge&&nOrange?" · ":"")
                             + (nOrange?nOrange+" orange":"")
-                          : (n?"0 grave · "+n+" info":"0"));
+                            + (nClos?" · "+nClos+" clos":"")
+                          : (nClos?"0 en cours · "+nClos+" clos":(n?"0 grave":"0")));
   setC("ch-alerts", graves||"0");
 }
 
