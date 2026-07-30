@@ -708,6 +708,19 @@ body.base-light .leaflet-control-scale-line{background:rgba(255,255,255,.8)!impo
 }
 
 /* ============ ADAPTATION PAR TAILLE D'ÉCRAN ============ */
+/* CIBLES TACTILES. Au doigt, un bouton de 30 px se rate une fois sur trois —
+   Apple recommande 44 px, Google 48. Mesuré sur un écran de 375 px, restaient
+   sous le seuil : les deux boutons de zoom de Leaflet, les deux croix de
+   fermeture, le bouton de filtre des séismes et les treize tuiles du tiroir.
+   Les rangées de couches, elles, faisaient déjà 54 px de haut : c'est le label
+   entier qui est touché, pas la case, qui ne mesure qu'un pixel.
+   Rien de tout cela ne change sur ordinateur, où le pointeur est précis. */
+@media (hover:none) and (pointer:coarse){
+  .tile{min-height:44px}
+  .pclose,.cclose{width:40px;height:40px}
+  .btnq{min-height:40px}
+  .leaflet-control-zoom a{width:40px!important;height:40px!important;line-height:40px!important}
+}
 @media (max-width:420px){
   .tiles{grid-template-columns:repeat(2,1fr)}
   .grp{padding:0 9px;gap:6px}
