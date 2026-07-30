@@ -1477,10 +1477,30 @@ function badge(){
   d.classList.toggle("on",n>0);
 }
 
+/* Ressources non chargées : REGROUPÉES PAR HÔTE.
+   Une tuile manquante produit un évènement par tuile et par image d'animation.
+   Une carte radar sans couverture locale en génère donc plusieurs centaines en
+   quelques secondes : le journal s'était rempli de 250 lignes identiques, qui
+   masquaient toutes les vraies erreurs. On garde la première ligne pour chaque
+   hôte, puis on la met à jour avec un compteur au lieu d'en empiler d'autres. */
+var RESAGG={};
+function pushResource(url){
+  var h="local"; try{ h=new URL(url, location.href).hostname; }catch(e){}
+  var a=RESAGG[h], now=Date.now();
+  if(a && now-a.t < 20000 && LOG.indexOf(a.e)>=0){
+    a.n++; a.t=now;
+    a.e.msg = a.n+" ressources non chargées · "+h+" (regroupées)";
+    if(document.getElementById("diag") && document.getElementById("diag").classList.contains("open")) render();
+    return;
+  }
+  push("RÉSEAU","ressource non chargée : "+short(url));
+  RESAGG[h]={n:1, t:now, e:LOG[LOG.length-1]};
+}
+
 /* Erreurs JavaScript */
 window.addEventListener("error",function(e){
   if(e.target && e.target.tagName && /SCRIPT|LINK|IMG/.test(e.target.tagName)){
-    push("RÉSEAU","ressource non chargée : "+short(e.target.src||e.target.href||""));
+    pushResource(e.target.src||e.target.href||"");
     return;
   }
   push("ERREUR",(e.message||"erreur")+(e.filename?"  ["+short(e.filename)+":"+e.lineno+"]":""));
@@ -3836,10 +3856,24 @@ async function drawSmoke(){
 /* ===== RADAR DE PLUIE ANIMÉ (RainViewer) ===== */
 let rvFrames=[], rvIdx=0, rvTimer=0, rvHost="", rvLayers=[];
 /* La tuile n’est téléchargée qu’au moment où l’image est jouée */
+/* Tuile transparente de 1 pixel. Sans elle, chaque tuile radar absente lève un
+   évènement d'erreur d'image : une zone sans couverture radar en produisait
+   plusieurs centaines en quelques secondes, qui remplissaient tout le journal.
+   Avec `errorTileUrl`, Leaflet substitue simplement cette image vide — ce qui
+   est la représentation exacte de la réalité : il n'y a pas de radar ici. */
+const RV_VIDE="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 function rvEnsure(i){
   if(rvLayers[i] || !rvFrames[i]) return;
   rvLayers[i]=L.tileLayer(`${rvHost}${rvFrames[i].path}/256/{z}/{x}/{y}/4/1_1.png`,
-    {opacity:0, zIndex:190, attribution:"RainViewer", updateWhenIdle:true}).addTo(layers.radar);
+    {opacity:0, zIndex:190, attribution:"RainViewer", updateWhenIdle:true,
+     errorTileUrl:RV_VIDE,
+     /* RainViewer ne produit pas de tuiles radar au-delà du zoom 10 : les
+        demander garantissait un échec. Au-delà, on agrandit la tuile du zoom 10
+        au lieu d'en réclamer une qui n'existe pas — moins de requêtes, et elles
+        aboutissent. La précision d'un radar météo ne va de toute façon pas
+        au-delà du kilomètre. */
+     maxNativeZoom:10, maxZoom:19,
+     crossOrigin:true}).addTo(layers.radar);
 }
 async function initRadar(){
   if(!$("#tg-radar").checked) return;
