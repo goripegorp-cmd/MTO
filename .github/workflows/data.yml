@@ -14,11 +14,14 @@ name: Donnees
 # "best effort" sur les depots publics, et il ecarte massivement les cadences
 # serrees exprimees en */n, qui tombent toutes sur les memes minutes rondes que
 # celles de milliers d'autres depots.
-# On declare donc des minutes DECALEES et explicites plutot qu'un pas : cela
-# evite la bousculade de la minute zero, ce qui ameliore nettement le taux
-# d'execution reel. Cela ne garantit rien -- GitHub ne garantit rien -- d'ou les
-# tolerances d'age relevees cote carte : une donnee un peu ancienne, affichee
-# avec son age, vaut mieux qu'une absence.
+# MESURE FINALE, apres trois tentatives : « */10 » a donne 3 passages en 20 h,
+# « */15 » aucun en 7 h, « 7,22,37,52 » aucun en 11 h. Aucune ecriture du cron
+# n'ameliore quoi que ce soit -- le planificateur ecarte simplement la plupart
+# des declenchements, et il n'y a aucun recours.
+# On cesse donc de compter sur la FREQUENCE des declenchements pour s'appuyer
+# sur leur EXISTENCE : chaque declenchement ouvre un service qui collecte toutes
+# les quinze minutes pendant 5 h 45 (voir le travail plus bas). Les minutes
+# demandees restent nombreuses pour maximiser les chances qu'une seule aboutisse.
 on:
   schedule:
     - cron: "7,22,37,52 * * * *"
@@ -42,52 +45,114 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # Le service tient au plus 5 h 45, sous la limite de 6 h d'un travail
+    # GitHub. Il s'arrête proprement de lui-même avant.
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
 
       # Aucune étape « setup-node » : l'image ubuntu-latest fournit déjà une
       # version de Node récente, largement suffisante pour `fetch` natif.
-      # Cela retire une étape et quelques secondes à chaque passage.
       - name: Version de Node
         run: node --version
 
-      # Le script vit dans le dépôt (scripts/build.js) et n'est plus recopié
-      # depuis ce fichier : une seule source de vérité, lisible et versionnée.
-      - name: Collecte
-        run: node scripts/build.js fast
+      # ================= SERVICE DE COLLECTE =================
+      # POURQUOI UNE BOUCLE PLUTÔT QU'UN PASSAGE.
+      # Mesure sur ce dépôt, trois expressions cron successives :
+      #     « */10 »          3 passages programmés en 20 h
+      #     « */15 »          0 passage en 7 h
+      #     « 7,22,37,52 »    0 passage en 11 h
+      # Les passages programmés réellement obtenus tombent toutes les cinq à
+      # huit heures, quelle que soit la cadence demandée. Le planificateur de
+      # GitHub est explicitement « best effort » et écarte massivement les
+      # déclenchements sur les dépôts publics ; aucune écriture du cron n'y
+      # change quoi que ce soit — c'est vérifié, pas supposé.
+      #
+      # On cesse donc de compter sur la fréquence des déclenchements et on
+      # s'appuie sur leur EXISTENCE : chaque déclenchement, si rare soit-il,
+      # ouvre un service qui collecte toutes les quinze minutes jusqu'à
+      # l'échéance. Un passage toutes les six heures suffit alors à couvrir la
+      # journée entière, là où un passage = une collecte laissait des trous de
+      # six heures — au-delà des seuils de fraîcheur de la carte, qui repartait
+      # alors interroger les serveurs d'origine par visiteur, exactement ce que
+      # ce robot existe pour éviter.
+      #
+      # `concurrency: cancel-in-progress` fait le reste : le déclenchement
+      # suivant annule le service en cours et prend le relais. Il n'y a jamais
+      # deux services en vol.
+      #
+      # POUR REVENIR EN ARRIÈRE : mettre DUREE_MIN à 0 ci-dessous. Le travail
+      # redevient un passage unique, comme avant. Sur un dépôt public, les
+      # minutes GitHub Actions ne sont pas décomptées.
+      - name: Service de collecte
+        env:
+          # Un déclenchement programmé ouvre le service ; un déclenchement
+          # manuel ne fait qu'un passage, pour ne pas bloquer un essai.
+          DUREE_MIN: ${{ github.event_name == 'schedule' && 330 || 0 }}
+          PAS_SEC: 900
+        run: |
+          set -uo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          publier() {
+            git add data/
+            if git diff --staged --quiet; then
+              echo "  rien de neuf, pas de publication."
+              return 0
+            fi
+            git commit -q -m "Donnees $(date -u '+%Y-%m-%d %H:%M') UTC"
+            for i in 1 2 3; do
+              if git push -q; then
+                echo "  publié (tentative $i)."
+                return 0
+              fi
+              echo "  tentative $i refusée, resynchronisation…"
+              git pull --rebase --autostash -q origin main || true
+            done
+            echo "::warning::Publication impossible après trois tentatives."
+            return 1
+          }
+
+          FIN=$(( $(date +%s) + 60 * DUREE_MIN ))
+          TOUR=0
+          ECHECS=0
+          while : ; do
+            TOUR=$((TOUR+1))
+            echo "--- tour $TOUR  ($(date -u '+%H:%M:%S') UTC) ---"
+            if node scripts/build.js fast; then
+              publier || ECHECS=$((ECHECS+1))
+            else
+              echo "::warning::Collecte en échec au tour $TOUR."
+              ECHECS=$((ECHECS+1))
+            fi
+            # Trois échecs consécutifs de publication : quelque chose ne va pas
+            # durablement, on sort en erreur plutôt que de tourner à vide des
+            # heures en donnant l'illusion que le robot fonctionne.
+            if [ "$ECHECS" -ge 3 ]; then
+              echo "::error::Trois échecs consécutifs — arrêt du service."
+              exit 1
+            fi
+            [ "$ECHECS" -eq 0 ] || ECHECS=0
+            RESTE=$(( FIN - $(date +%s) ))
+            if [ "$RESTE" -le "$PAS_SEC" ]; then
+              echo "Échéance atteinte après $TOUR tour(s)."
+              break
+            fi
+            echo "  prochaine collecte dans $((PAS_SEC/60)) min (reste $((RESTE/60)) min)"
+            sleep "$PAS_SEC"
+            # La branche a pu avancer pendant l'attente (publication manuelle,
+            # autre travail) : on se resynchronise avant de recollecter.
+            git pull --rebase --autostash -q origin main || true
+          done
 
       - name: Périmètres brûlés (sur demande)
         if: github.event_name == 'workflow_dispatch' && inputs.slow
-        run: node scripts/build.js slow
-
-      # Le script n'écrit un fichier que si la donnée a réellement changé :
-      # un cycle calme ne produit donc aucun commit. Auparavant, meta.json
-      # portait un horodatage à chaque passage, ce qui garantissait un commit
-      # toutes les dix minutes pour rien et faisait grossir l'historique de
-      # près de 200 ko par cycle.
-      - name: Publier
         run: |
           set -euo pipefail
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          node scripts/build.js slow
           git add data/
-          if git diff --staged --quiet; then
-            echo "Aucun changement — rien à publier."
-            exit 0
-          fi
-          git commit -m "Donnees $(date -u '+%Y-%m-%d %H:%M') UTC"
-          # Trois tentatives : le déploiement Pages ou une modification manuelle
-          # peuvent avoir avancé la branche entre-temps. En cas d'échec durable,
-          # le travail échoue VRAIMENT — l'ancienne version terminait en succès
-          # même quand rien n'avait été poussé, ce qui masquait le problème.
-          for i in 1 2 3; do
-            if git push; then
-              echo "Publié à la tentative $i."
-              exit 0
-            fi
-            echo "Tentative $i refusée, resynchronisation…"
-            git pull --rebase --autostash origin main
-          done
-          echo "::error::Impossible de publier les données après trois tentatives."
-          exit 1
+          git diff --staged --quiet || {
+            git commit -q -m "Perimetres brules $(date -u '+%Y-%m-%d %H:%M') UTC"
+            git push -q || { git pull --rebase --autostash -q origin main && git push -q; }
+          }
