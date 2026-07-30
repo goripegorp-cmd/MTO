@@ -1,136 +1,83 @@
 name: Donnees
 
+# Rythme : GitHub honore les déclenchements programmés « au mieux » et écarte
+# largement les cadences très serrées. Avec « */10 » (toutes les 10 minutes),
+# trois exécutions seulement ont eu lieu en vingt heures, soit un passage toutes
+# les cinq à huit heures — au point que les garde-fous d'âge de la carte
+# rejetaient les fichiers pré-calculés et renvoyaient tout le monde en direct
+# sur les serveurs d'origine, exactement ce que ce robot doit éviter.
+# Un quart d'heure est une cadence que GitHub tient beaucoup plus régulièrement,
+# et elle reste sous tous les seuils de fraîcheur du client (1 h pour les
+# séismes, le plus exigeant).
 on:
   schedule:
-    - cron: "*/10 * * * *"
-    - cron: "17 4 * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
+    inputs:
+      slow:
+        description: "Forcer la reconstruction des périmètres brûlés (Copernicus)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
+# Une exécution bloquée ne doit jamais retenir la suivante : on annule celle en
+# cours plutôt que d'empiler une file d'attente qui finit par étouffer le
+# déclencheur programmé.
 concurrency:
   group: data-refresh
+  cancel-in-progress: true
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
 
-      - name: Type
-        id: k
-        run: |
-          if [ "${{ github.event.schedule }}" = "17 4 * * *" ]; then
-            echo "kind=slow" >> $GITHUB_OUTPUT
-          else
-            echo "kind=fast" >> $GITHUB_OUTPUT
-          fi
+      # Aucune étape « setup-node » : l'image ubuntu-latest fournit déjà une
+      # version de Node récente, largement suffisante pour `fetch` natif.
+      # Cela retire une étape et quelques secondes à chaque passage.
+      - name: Version de Node
+        run: node --version
 
-      - name: Script
-        run: |
-          mkdir -p scripts
-          cat > scripts/build.js <<'EOSCRIPT'
-          const fs=require("fs"),P=require("path");
-          const OUT=P.join(process.cwd(),"data");fs.mkdirSync(OUT,{recursive:true});
-          const now=Date.now(),p3=v=>Math.round(v*1e3)/1e3;
-          async function get(u,ms,h){const c=new AbortController(),t=setTimeout(()=>c.abort(),ms||45e3);
-            try{const r=await fetch(u,{signal:c.signal,headers:h||{}});if(!r.ok)throw new Error("HTTP "+r.status);return await r.json();}
-            finally{clearTimeout(t);}}
-          const WROTE=[];
-          function w(n,o,l){const s=JSON.stringify(o);fs.writeFileSync(P.join(OUT,n),s);
-            WROTE.push(n.replace(".json",""));
-            console.log("  OK "+n+" "+Math.round(s.length/1024)+" ko "+l);}
+      # Le script vit dans le dépôt (scripts/build.js) et n'est plus recopié
+      # depuis ce fichier : une seule source de vérité, lisible et versionnée.
+      - name: Collecte
+        run: node scripts/build.js fast
 
-          async function quakes(){
-            const d=await get("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson",40e3);
-            const q=(d.features||[]).map(f=>{const p=f.properties,c=f.geometry.coordinates;
-              return [p.mag,p.place||"",p.time,Math.round(c[2]),p3(c[1]),p3(c[0]),p.url||""];})
-              .filter(x=>x[0]!=null).sort((a,b)=>b[2]-a[2]);
-            w("quakes.json",{t:now,q},q.length+" seismes");}
+      - name: Périmètres brûlés (sur demande)
+        if: github.event_name == 'workflow_dispatch' && inputs.slow
+        run: node scripts/build.js slow
 
-          async function eonet(){
-            const d=await get("https://eonet.gsfc.nasa.gov/api/v3/events?status=open",60e3),MAX=90*864e5;
-            const events=(d.events||[]).map(e=>{
-              const g=(e.geometry||[]).filter(x=>x.type==="Point"&&Array.isArray(x.coordinates));
-              if(!g.length||now-Date.parse(g[g.length-1].date)>MAX)return null;
-              const c=(e.categories&&e.categories[0]&&e.categories[0].id)||"";
-              const k=c==="severeStorms"?(g.length>20?g.slice(-20):g):[g[0],g[g.length-1]];
-              const seen=new Set(),u=[];k.forEach(x=>{if(!seen.has(x.date)){seen.add(x.date);u.push(x);}});
-              return {t:e.title,c:c,s:(e.sources&&e.sources[0]&&e.sources[0].url)||"",
-                g:u.map(x=>[p3(x.coordinates[1]),p3(x.coordinates[0]),Math.round(Date.parse(x.date)/6e4)])};
-            }).filter(Boolean);
-            w("eonet.json",{t:now,events},events.length+" evenements (90j)");}
-
-          async function gdacs(){
-            const d=await get("https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP",90e3);
-            const f=(d.features||[]).filter(x=>x.geometry&&x.geometry.type==="Point").map(x=>{const p=x.properties||{};
-              return {t:p.eventtype,a:p.alertlevel,co:p.country||"",n:p.name||p.eventname||p.description||"",
-                s:(p.severitydata&&p.severitydata.severitytext)||"",d:p.fromdate||"",
-                u:(p.url&&(p.url.report||p.url.details))||"",
-                c:[p3(x.geometry.coordinates[1]),p3(x.geometry.coordinates[0])]};});
-            w("gdacs.json",{t:now,f},f.length+" alertes");}
-
-          async function nws(){
-            const d=await get("https://api.weather.gov/alerts/active?status=actual&severity=Extreme,Severe",45e3,
-              {Accept:"application/geo+json","User-Agent":"planete-en-direct"});
-            const f=(d.features||[]).filter(x=>x.geometry).slice(0,120);
-            w("nws.json",{t:now,type:"FeatureCollection",features:f},f.length+" vigilances");}
-
-          /* Les contours bruts comptent jusqu'a 126 000 sommets : on les simplifie
-             a 48 points maximum sans supprimer aucune zone. Memoire divisee par 3
-             cote navigateur, precision visuellement identique a l'echelle carte. */
-          function simp(r,k){ if(r.length<=k) return r; const s=r.length/k,o=[];
-            for(let i=0;i<k;i++)o.push(r[Math.floor(i*s)]); o.push(r[r.length-1]); return o; }
-          const simpGeo=c=>Array.isArray(c[0])&&Array.isArray(c[0][0])?c.map(simpGeo):simp(c,48);
-
-          async function effis(){
-            const out={t:now,type:"FeatureCollection",features:[]};
-            for(const b of ["-11,35,32,60","-8,29,42,46"]){
-              try{const d=await get("https://maps.wild-fire.eu/effis?service=WFS&version=1.0.0&request=GetFeature"
-                +"&typeName=ms:modis.ba.poly.season&outputFormat=geojson&maxFeatures=600&srsName=EPSG:4326&bbox="+b,120e3);
-                (d.features||[]).forEach(f=>{const p=f.properties||{};
-                  f.properties={COMMUNE:p.COMMUNE,PROVINCE:p.PROVINCE,COUNTRY:p.COUNTRY,
-                    AREA_HA:p.AREA_HA,FIREDATE:p.FIREDATE,LASTUPDATE:p.LASTUPDATE};
-                  const r=c=>Array.isArray(c[0])?c.map(r):[p3(c[0]),p3(c[1])];
-                  if(f.geometry&&f.geometry.coordinates)
-                    f.geometry.coordinates=simpGeo(r(f.geometry.coordinates));
-                  out.features.push(f);});
-              }catch(e){console.log("  zone "+b+" indisponible");}}
-            if(out.features.length)w("effis.json",out,out.features.length+" perimetres");}
-
-          (async()=>{const k=process.argv[2]||"fast";
-            const T=k==="slow"?[["effis",effis]]:[["quakes",quakes],["eonet",eonet],["gdacs",gdacs],["nws",nws]];
-            for(const [n,f] of T){try{await f();}catch(e){console.log("  ECHEC "+n+" : "+e.message);}}
-            /* On declare la liste exacte des fichiers disponibles : la carte ne
-               demandera plus un fichier absent, donc plus aucun 404 dans le journal. */
-            let has=[];
-            try{ const m=JSON.parse(fs.readFileSync(P.join(OUT,"meta.json"),"utf8")); has=m.files||[]; }catch(e){}
-            fs.readdirSync(OUT).forEach(f=>{ if(f.endsWith(".json")&&f!=="meta.json"){ const n=f.replace(".json",""); if(has.indexOf(n)<0) has.push(n); } });
-            fs.writeFileSync(P.join(OUT,"meta.json"),JSON.stringify({built:now,kind:k,files:has}));
-            process.exit(0);})();
-          EOSCRIPT
-
-      - name: Donnees
-        run: |
-          node scripts/build.js ${{ steps.k.outputs.kind }}
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            node scripts/build.js slow
-          fi
-
+      # Le script n'écrit un fichier que si la donnée a réellement changé :
+      # un cycle calme ne produit donc aucun commit. Auparavant, meta.json
+      # portait un horodatage à chaque passage, ce qui garantissait un commit
+      # toutes les dix minutes pour rien et faisait grossir l'historique de
+      # près de 200 ko par cycle.
       - name: Publier
         run: |
-          git config user.name "github-actions[bot]"
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/ scripts/
+          git add data/
           if git diff --staged --quiet; then
-            echo "Aucun changement"
-          else
-            git commit -m "Donnees $(date -u '+%Y-%m-%d %H:%M')"
-            git pull --rebase --autostash origin main || true
-            git push
+            echo "Aucun changement — rien à publier."
+            exit 0
           fi
+          git commit -m "Donnees $(date -u '+%Y-%m-%d %H:%M') UTC"
+          # Trois tentatives : le déploiement Pages ou une modification manuelle
+          # peuvent avoir avancé la branche entre-temps. En cas d'échec durable,
+          # le travail échoue VRAIMENT — l'ancienne version terminait en succès
+          # même quand rien n'avait été poussé, ce qui masquait le problème.
+          for i in 1 2 3; do
+            if git push; then
+              echo "Publié à la tentative $i."
+              exit 0
+            fi
+            echo "Tentative $i refusée, resynchronisation…"
+            git pull --rebase --autostash origin main
+          done
+          echo "::error::Impossible de publier les données après trois tentatives."
+          exit 1
