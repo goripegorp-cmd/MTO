@@ -1105,8 +1105,8 @@ body.base-light .leaflet-control-scale-line{background:rgba(255,255,255,.8)!impo
             <span><b class="lgs zombie"></b>CARRÉ en pointillé — <b>le sol a brûlé, plus de front</b>, mais ça peut repartir</span>
           </div>
           <p class="lghint">Deux états, pas trois. Un feu que les pompiers sont en train d’éteindre
-            brûle toujours : il est <b>actif</b>. La teinte du rond dit seulement s’il prend de l’ampleur
-            (rouge vif) ou s’il recule (ambre) — c’est une nuance, pas une catégorie.</p>
+            brûle toujours : il est <b>actif</b>. La teinte du rond dit s’il prend de l’ampleur
+            (rouge vif), ou bien qu’il recule <b>ou simplement qu’aucun satellite ne l’a revu depuis plusieurs heures</b> (ambre). C’est une nuance, pas une catégorie.</p>
           <p class="lghint">La couleur seule ne suffisait pas : sur une carte couverte de cercles, on ne
             distinguait plus ce qui brûle de ce qui a brûlé. La forme se reconnaît d’un coup d’œil, même
             sans percevoir les couleurs.</p>
@@ -1340,8 +1340,8 @@ body.base-light .leaflet-control-scale-line{background:rgba(255,255,255,.8)!impo
 
       <details>
         <summary><svg class="ic x16" aria-hidden="true"><use href="#i-satellite"/></svg><span>Pixels satellites en alerte thermique</span></summary>
-        <p>Chaque rectangle est le <b>pixel du capteur</b> au moment de la mesure — environ 375 × 375 m pour VIIRS, 1 km pour MODIS. <b>Ce n’est pas la taille du feu.</b> Le satellite établit une seule chose : quelque chose de nettement plus chaud que son entourage se trouvait quelque part dans ce rectangle. Il déclenche déjà sur un foyer de quelques centaines de mètres carrés, si bien que le feu réel est presque toujours <b>beaucoup plus petit</b> que le carré affiché.</p>
-        <p>Les rectangles grandissent avec le zoom parce qu’ils sont dessinés à l’échelle du terrain, comme la carte elle-même. C’est la surface <b>observée</b>, pas la surface brûlée.</p>
+        <p>Chaque rectangle est le <b>pixel du capteur</b> au moment de la mesure — environ 375 × 375 m pour VIIRS, 1 km pour MODIS. <b>Ce n’est pas la taille du feu.</b> Le satellite établit une seule chose : quelque chose de nettement plus chaud que son entourage se trouvait quelque part dans ce pixel. Il déclenche déjà sur un foyer de quelques centaines de mètres carrés, si bien que le feu réel est presque toujours <b>beaucoup plus petit</b> que le pixel affiché.</p>
+        <p>Chaque détection est dessinée comme un <b>disque de même surface que le pixel</b> du capteur. À partir du zoom 9,5 ce disque est tracé à l’échelle du terrain et grandit donc avec la carte ; en dessous, les foyers restent de simples points de taille fixe à l’écran — zoomez pour voir l’empreinte réelle. Dans les deux cas c’est la surface <b>observée</b>, jamais la surface brûlée.</p>
         <p>La <b>couleur indique la puissance rayonnée</b> mesurée, en mégawatts : jaune (faible) → orange → rouge vif (200 MW et plus, très intense). L’<b>opacité indique la fraîcheur</b> : vif = moins de 12 h, pâle = plus ancien.</p>
         <p>Touchez un point chaud : puissance en MW, <b>température de brillance</b> — celle du rayonnement moyenné sur tout le pixel, <b>pas celle du sol</b> —, heure du passage satellite avec son fuseau, taille du pixel et niveau de confiance.</p>
         <p><b>Deux constellations combinées</b> : VIIRS (375 m) et MODIS (1 km, souvent plus frais). Les doublons sont éliminés en privilégiant la détection la plus fine. La fiche indique <b>quel capteur</b> a vu le point.</p>
@@ -2759,9 +2759,13 @@ function paysFR(n, max){
    français n'emploie pas « milliers » comme unité — 801 000 s'écrit en toutes
    lettres de chiffres. Seul le million se dit, et il commande alors « de ». */
 function gdNb(s){
-  const m=String(s).match(/([\d]+(?:[.,][\d]+)?)\s*(thousand|million|billion)?/i);
+  /* Les separateurs de milliers anglais sont des VIRGULES : « 1,300,000 ».
+     L’ancienne expression s’arretait au premier groupe et lisait 1,3 -- soit
+     un bilan divise par un million. On accepte donc les groupes repetes, et
+     seul le POINT est traite comme separateur decimal. */
+  const m=String(s).match(/(\d{1,3}(?:[,  ]\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(thousand|million|billion)?/i);
   if(!m) return null;
-  let v=parseFloat(m[1].replace(/,/g,""));
+  let v=parseFloat(m[1].replace(/[,  ]/g,""));
   if(!isFinite(v)) return null;
   const u=(m[2]||"").toLowerCase();
   if(u==="thousand") v*=1e3; else if(u==="million") v*=1e6; else if(u==="billion") v*=1e9;
@@ -2771,7 +2775,11 @@ function gdNb(s){
 /* Rend « 801 000 personnes » ou « 1,2 million de personnes ». */
 function gdPers(s, mot){
   const n=gdNb(s); if(!n || !n.v) return null;
-  return n.txt + (n.de?" de ":" ") + (mot||"personnes");
+  let m = mot||"personnes";
+  /* Accord au singulier : « 1 mort », « 1 personne déplacée ». Chaque mot du
+     groupe perd son s, pas seulement le premier. */
+  if(n.v===1) m = m.replace(/s(\s|$)/g, "$1");
+  return n.txt + (n.de?" de ":" ") + m;
 }
 /* Échelle de Mercalli : un chiffre romain ne dit rien à personne. */
 const MMI_FR={I:"secousses imperceptibles", II:"secousses à peine perçues",
@@ -2797,7 +2805,10 @@ function gdacsResumeFR(x){
   if((m=s.match(/a flood started in (.+?),\s*lasting until ([\d/]+)/i))){
     const morts=(s.match(/([\d\s.,]+)\s*deaths/i)||[])[1];
     const depl =(s.match(/and\s*([\d\s.,]+)\s*displaced/i)||[])[1];
-    let t=`Inondation en cours ${paysFR(m[1],3)?"— "+paysFR(m[1],3):""}, dernière mise à jour le ${dmy(m[2])||m[2]}.`;
+    /* L’amorce doit suivre x.cur. Elle affirmait « en cours » y compris deux
+       lignes sous le bandeau « ÉVÉNEMENT CLOS » -- exactement la confusion que
+       tout ce chantier cherche à supprimer. */
+    let t=`${x.cur?"Inondation en cours":"Inondation terminée"} ${paysFR(m[1],3)?"— "+paysFR(m[1],3):""}, ${x.cur?"dernière mise à jour le":"suivie jusqu’au"} ${dmy(m[2])||m[2]}.`;
     const bilan=[], mo=morts&&gdPers(morts,"morts"), de=depl&&gdPers(depl,"personnes déplacées");
     if(mo) bilan.push(`<b>${mo}</b>`);
     if(de) bilan.push(`<b>${de}</b>`);
@@ -2808,7 +2819,7 @@ function gdacsResumeFR(x){
     const p=paysFR(m[1],3);
     return `Feu de forêt déclaré le ${dmy(s)||"?"}${p?" — "+p:""}, suivi jusqu’au ${dmy(m[2])||m[2]}.`;
   }
-  if((m=s.match(/an earthquake occurred in (.+?)\s*potentially affecting\s*(.+?)\./i))){
+  if((m=s.match(/an earthquake occurred in (.+?)\s*potentially affecting\s*(.+?)\.(?=\s|$)/i))){
     const mag=(s.match(/Magnitude\s*([\d.]+)\s*M/i)||[])[1];
     const prf=(s.match(/Depth:\s*([\d.]+)\s*km/i)||[])[1];
     const mmi=(s.match(/MMI\s*(?:>=)?\s*([IVX]+)/i)||[])[1];
@@ -3985,9 +3996,13 @@ function buildComplexes(pts){
    sinistre en cours.
    ============================================================ */
 function fireState(fresh, trend){
-  if(fresh>24) return {key:"eteint", nm:"Éteint", col:"#7d8ba6", dash:"6 5", fill:.05, w:1.5,
-    label:"Éteint — aucune chaleur détectée depuis "+Math.round(fresh)+" h",
-    why:"Les satellites survolent ce point plusieurs fois par jour. Plus d’une journée sans la moindre détection thermique : le feu ne brûle plus. La zone reste affichée parce qu’elle a brûlé."};
+  /* Ne PAS écrire « le feu ne brûle plus » : la pastille voisine dit ZOMBIE,
+     c’est-à-dire « ça peut repartir ». Les deux phrases se contredisaient dans
+     la même fiche. Le satellite établit une absence de front VISIBLE DU CIEL,
+     pas une extinction. */
+  if(fresh>24) return {key:"eteint", nm:"Zombie", col:"#7d8ba6", dash:"6 5", fill:.05, w:1.5,
+    label:"Plus aucun front détecté depuis "+Math.round(fresh)+" h",
+    why:"Les satellites survolent ce point plusieurs fois par jour. Plus d’une journée sans la moindre détection thermique : il n’y a plus de front visible du ciel. Des points chauds peuvent subsister sous le sol."};
   if(fresh>12) return {key:"residuel", nm:"Zombie", col:"#b5a06a", dash:"9 4", fill:.07, w:1.8,
     label:"Plus de front actif — rien depuis "+Math.round(fresh)+" h",
     why:"Aucune détection depuis plus de douze heures. Il peut rester des points chauds sous le sol, mais il n’y a plus de front visible du ciel."};
@@ -4128,7 +4143,7 @@ function localitesConcernees(c){
 function localitesHTML(c){
   const L=localitesConcernees(c);
   if(!L) return "";
-  const ligne=x=>`<b>${esc(x.n)}</b> <span style="color:#8fa4cc">${x.d<1?Math.round(x.d*1000)+" m":x.d.toFixed(1)+" km"}</span>`;
+  const ligne=x=>`<b>${esc(x.n)}</b> <span style="color:#8fa4cc">${x.d<1?fmtM(x.d*1000):fmtD(x.d)}</span>`;
   let h=`<div class="nw-s">Localités concernées</div>`;
   if(L.atteintes.length){
     h+=`<div class="pp-row"><span style="color:#ff6d00;font-weight:600">Le feu est passé à leur contact</span><br>`
@@ -4201,7 +4216,7 @@ function drawComplexes(){
       <div class="pp-row">Activité du <b>${fmtShort(c.t0)}</b> au <b>${fmtShort(c.t1)}</b></div>
       ${vecTxt||'<div class="pp-row">Propagation non mesurable (foyer trop récent ou stationnaire)</div>'}
       ${localitesHTML(c)}
-      <a class="pp-link" href="#" onclick="fireAnalysis(${c.c[0]},${c.c[1]},'Incendie',${c.t0},${c.t1});return false">${ic("projection","x14")}Prévoir la propagation (météo et règle des 30)</a><br>
+      ${mort?"":`<a class="pp-link" href="#" onclick="fireAnalysis(${c.c[0]},${c.c[1]},'Incendie',${c.t0},${c.t1});return false">${ic("projection","x14")}Prévoir la propagation (météo et règle des 30)</a><br>`}
       <a class="pp-link" href="#" onclick="showNews(${c.c[0]},${c.c[1]},'fire','Incendie — actualités');return false">${ic("news","x14")}Actualités : évacuations, bilans, moyens engagés</a>
       <div class="pp-warn">Surface et direction calculées à partir des détections satellites réelles. Ce n’est pas un relevé de terrain : les pompiers font foi.</div>`;
     /* Un seul repère par sinistre, à son barycentre : la surface en hectares et
@@ -4211,7 +4226,10 @@ function drawComplexes(){
     /* La pastille porte la même unité que le reste de la carte : en lecture
        impériale on convertit LE NOMBRE aussi, pas seulement l'étiquette. */
     const bVal = isImp() ? c.burned*100*2.471 : c.burned*100;
-    const bTxt = bVal>=1000 ? Math.round(bVal/100)/10+"k" : Math.round(bVal);
+    /* Separateur decimal francais jusque sur la pastille : « 1.5k » se lit
+       « mille cinq cents » a l’anglaise, et « 1 5k » a la francaise. */
+    const d1 = Math.round(bVal/100)/10;
+    const bTxt = bVal>=1000 ? nf(d1, Number.isInteger(d1)?0:1)+"k" : nf(Math.round(bVal));
     L.marker(c.c,{icon:L.divIcon({className:"",iconSize:[0,0],
         html:`<div class="fbadge ${bk.k}${gros?" big":""}" style="--c:${col}">`
            + `<b>${bTxt}</b>`
@@ -4375,9 +4393,9 @@ async function checkThreats(){
         <div class="pp-cat">Un incendie progresse dans cette direction</div>
         <div class="pp-row">Distance du front : <b>${fmtD(t.dist)}</b></div>
         <div class="pp-row">Le feu avance vers le <b>${compass(t.c.vec.brg)}</b>, le village est à <b>${Math.round(t.off)}°</b> de cet axe</div>
-        <div class="pp-row">Délai estimé si rien ne l’arrête : <b>${t.hrs<1?"moins d’1 heure":t.hrs.toFixed(1)+" heures"}</b><br><span style="color:#8fa4cc">progression observée ${t.c.vec.spd.toFixed(2)} km/h, corrigée du ralentissement nocturne et de l’essoufflement</span></div>
+        <div class="pp-row">Délai estimé si rien ne l’arrête : <b>${t.hrs<1?"moins d’1 heure":nf(t.hrs,1)+" heures"}</b><br><span style="color:#8fa4cc">progression observée ${fmtVp(t.c.vec.spd)}, corrigée du ralentissement nocturne et de l’essoufflement</span></div>
         <div class="pp-row" style="color:${t.c.stateCol}">${t.c.state}</div>
-        <div class="pp-row">Incendie de <b>${nf(t.c.frp)} MW</b> · surface détectée <b>${fmtA(t.c.burned*100)}</b></div>
+        <div class="pp-row">Incendie de <b>${nf(t.c.frp)} MW</b> · surface touchée <b>au plus ${fmtA(t.c.burned*100)}</b><br><span style="color:#8fa4cc">majorant : somme des pixels satellites, la surface réellement brûlée est plus petite</span></div>
         <a class="pp-link" href="#" onclick="showWeather(${t.pl.la},${t.pl.lo},'${esc(t.pl.n).replace(/'/g,"")}');return false">${ic("thermometer","x14")}Météo et vent sur place</a>
         <div class="pp-warn"><b>Ce n’est pas une prédiction.</b> C’est ce qui se passerait si personne n’intervenait — or les secours interviennent, et <b>la plupart des feux sont arrêtés bien avant d’atteindre une localité</b>. Ni le relief, ni les coupe-feux, ni les routes ne sont modélisés. <b>Seuls les pompiers et la préfecture décident d’une évacuation.</b> Cette information sert à comprendre, jamais à décider.</div>`;
       const mk=L.marker([t.pl.la,t.pl.lo],{zIndexOffset:900,
@@ -5012,9 +5030,15 @@ async function showWeather(lat, lon, presetName){
 }
 map.on("click", e=>showWeather(e.latlng.lat, e.latlng.lng));
 window.zoomFire=(la,lo)=>{
-  const h=$("#tg-hotspots"), e2=$("#tg-euba");
-  if(h&&!h.checked){ h.checked=true; map.addLayer(layers.hotspots); }
-  if(e2&&!e2.checked){ e2.checked=true; map.addLayer(layers.euba); }
+  /* On commande les cases VISIBLES, pas les fusionnees. Rallumer directement
+     tg-hotspots et tg-euba affichait la donnee alors que la rangee « Incendies »
+     restait eteinte a l’ecran : personne ne pouvait comprendre ni annuler. Le
+     parent entraine les siennes via `drives`. */
+  for(const id of ["tg-fire","tg-burnt"]){
+    const par=document.getElementById(id);
+    if(par && !par.checked){ par.checked=true; par.dispatchEvent(new Event("change",{bubbles:true})); }
+  }
+  syncUI();
   map.closePopup();
   map.flyTo([la,lo],11,{duration:1});
 };
@@ -6077,9 +6101,16 @@ async function assessSafety(){
     if(c.vec){
       const brgMe=bearing(c.c,[la,lo]);
       const off=Math.abs(((brgMe-c.vec.brg+540)%360)-180);
-      if(off<45 && c.vec.spd>0.05){
+      /* La fraicheur commande ICI AUSSI. Sans ce test, un feu que la ligne
+         precedente venait de retrograder parce qu’il n’emet plus rien depuis
+         plus de 12 h etait aussitot repromu DANGER, avec la phrase « il
+         progresse dans votre direction » -- au present, sur un front qu’aucun
+         satellite ne voit plus. */
+      if(c.fresh>12){
+        mouvement=`aucune progression depuis <b>${Math.round(c.fresh)} h</b> — la direction relevée pendant l’épisode était le <b>${compass(c.vec.brg)}</b>`;
+      }else if(off<45 && c.vec.spd>0.05){
         eta=d/c.vec.spd;
-        mouvement=`il progresse dans votre direction — <b>${eta<1?"moins d’1 h":eta.toFixed(1)+" h"}</b> au rythme actuel`;
+        mouvement=`il progresse dans votre direction — <b>${eta<1?"moins d’1 h":nf(eta,1)+" h"}</b> au rythme actuel`;
         if(eta<=2) sev="danger"; else if(eta<=6 && sev!=="danger") sev="warn";
       }else if(off>135){
         mouvement="il s’éloigne de vous";
@@ -6679,14 +6710,21 @@ function syncUI(){
   for(const l of LAYERS){
     if(!l.agg) continue;
     const el=document.getElementById(l.cnt); if(!el) continue;
-    let tot=0, vu=false, attente=false;
+    /* Un total PARTIEL doit se savoir. « zoom+ » et « hors zone » ne sont pas
+       des zéros : ce sont des sources qu'on n'a pas interrogées. Les avaler
+       silencieusement produisait un « 0 » fabriqué, sur lequel l'extinction
+       automatique se déclenchait ensuite en annonçant « aucun événement en ce
+       moment » — alors que deux sources sur trois n'avaient rien répondu. */
+    let tot=0, vu=false, attente=false, inconnu=false;
     for(const id of l.agg){
       const s=document.getElementById(id); if(!s) continue;
       const t=(s.textContent||"").trim();
       if(t==="…"){ attente=true; continue; }
+      if(!/^-?\d/.test(t)){ inconnu=true; continue; }   /* « – », « zoom+ », « hors zone » */
       const n=parseInt(t.replace(/[^\d-]/g,""),10);
-      if(isFinite(n)){ tot+=n; vu=true; }
+      if(isFinite(n)){ tot+=n; vu=true; } else inconnu=true;
     }
+    el.dataset.partiel = inconnu ? "1" : "";
     const v = vu ? nf(tot) : (attente?"…":"–");
     if(el.textContent!==v) el.textContent=v;
   }
@@ -6741,7 +6779,12 @@ setInterval(syncUI, 10000);
    « Risque » en est écarté volontairement : son compteur ne montre que les
    villages exposés, alors que la couche porte aussi la projection, la fumée et
    l'indice de danger. Zéro village ne veut pas dire rien à afficher. */
-const AUTO_OFF=["tg-storms","tg-volcanoes","tg-other","tg-burnt"];
+/* « Zones brûlées » en est retiré pour la même raison que « Risque » : son
+   compteur agrège trois sources dont deux sont muettes en vue large (Copernicus
+   ne répond qu'à partir du zoom 9, les relevés nord-américains sont hors zone
+   ailleurs qu'en Amérique). Le total pouvait donc tomber à zéro sans qu'aucune
+   source ne l'ait jamais confirmé. */
+const AUTO_OFF=["tg-storms","tg-volcanoes","tg-other"];
 let autoOffFait=false;
 function autoOffVides(){
   if(autoOffFait) return;
@@ -6753,6 +6796,10 @@ function autoOffVides(){
     const src=document.getElementById(l.cnt);
     const v=src?src.textContent.trim():"";
     if(v!=="0") continue;               /* « – », « zoom+ », « hors zone » : on ne touche pas */
+    /* Ni sur un total PARTIEL : un compteur agrégé dont une source n'a pas
+       répondu affiche la somme des autres, et cette somme peut valoir zéro sans
+       que la couche soit vide pour autant. */
+    if(src && src.dataset.partiel==="1") continue;
     cb.checked=false;
     cb.dispatchEvent(new Event("change",{bubbles:true}));
     eteintes.push(l.nm);
@@ -6886,6 +6933,10 @@ function initWelcome(){
    parent réveille les siens à la lecture du lien, ce qui suffit.
    ATTENTION : l'ordre est celui des bits du lien. Insérer une entrée au milieu
    invalide tous les liens déjà partagés ; on ajoute donc À LA FIN. */
+/* Marqueur de version du format de lien. Tant qu'il vaut « 2 », les positions
+   ci-dessous font foi. Le jour où l'ordre change encore, on l'incrémente : un
+   lien plus ancien sera alors ignoré au lieu d'être mal interprété. */
+const SHARE_VER="2";
 const SHARE_KEYS=["tg-fire","tg-burnt","tg-risk",
   "tg-quakes","tg-volcanoes","tg-storms","tg-other","tg-alerts",
   "tg-cities","tg-wind","tg-radar","tg-aq","tg-flood","tg-air"];
@@ -6904,7 +6955,12 @@ function buildShareURL(){
     c.lat.toFixed(4).replace(/0+$/,"").replace(/\.$/,""),
     c.lng.toFixed(4).replace(/0+$/,"").replace(/\.$/,""),
     String(map.getZoom()),
-    (BASE_CODE[baseCur]||"l")+labelDensity+(QF_CODE[state.qfeed]||"0"),
+    /* Le 4e champ porte desormais un MARQUEUR DE VERSION en 4e position.
+       La fusion des couches a reecrit SHARE_KEYS de fond en comble : le bit 8
+       valait « seismes », il vaut « temperatures ». Un lien emis avant cette
+       livraison, relu sans marqueur, n'allumait pas seulement de mauvaises
+       couches -- il eteignait activement les bonnes, en silence. */
+    (BASE_CODE[baseCur]||"l")+labelDensity+(QF_CODE[state.qfeed]||"0")+SHARE_VER,
     bits.toString(36)
   ].join(",");
   return location.origin+location.pathname+h;
@@ -6921,13 +6977,25 @@ function applyShareURL(){
       if(CODE_BASE[opt[0]]) setBase(CODE_BASE[opt[0]]);
       if(opt[1]!=null) labelDensity=Math.max(0,Math.min(2,+opt[1]||0));
       if(CODE_QF[opt[2]]) state.qfeed=CODE_QF[opt[2]];
-      SHARE_KEYS.forEach((k,i)=>{
-        const e=$("#"+k); if(!e) return;
-        const want=((bits>>BigInt(i))&1n)===1n;
-        /* `bubbles:true` est indispensable : l'écouteur délégué qui tient à jour
-           l'état visuel des rangées est posé sur le conteneur, pas sur chaque case. */
-        if(e.checked!==want){ e.checked=want; e.dispatchEvent(new Event("change", {bubbles:true})); }
-      });
+      /* SANS LE BON MARQUEUR DE VERSION, ON N'APPLIQUE AUCUNE COUCHE.
+         Un lien émis avant la fusion encode ses couches selon l'ancienne table :
+         relu avec la nouvelle, le bit des séismes devient celui des températures,
+         et les six derniers bits n'ont plus de destinataire. Pire, la boucle
+         force la valeur de CHAQUE case : l'ancien lien éteignait activement des
+         couches légitimes, sans un mot. On préfère donc honorer ce dont on est
+         sûr — position, zoom, fond, densité, filtre sismique — et laisser les
+         couches à leur état par défaut plutôt que d'en inventer un faux. */
+      if(opt[3]===SHARE_VER){
+        SHARE_KEYS.forEach((k,i)=>{
+          const e=$("#"+k); if(!e) return;
+          const want=((bits>>BigInt(i))&1n)===1n;
+          /* `bubbles:true` est indispensable : l'écouteur délégué qui tient à jour
+             l'état visuel des rangées est posé sur le conteneur, pas sur chaque case. */
+          if(e.checked!==want){ e.checked=want; e.dispatchEvent(new Event("change", {bubbles:true})); }
+        });
+      }else if(p[4] && p[4]!=="0" && window.__diagPush){
+        window.__diagPush("INFO","Lien d'un format anterieur : position et fond appliques, couches laissees par defaut.");
+      }
       if(isFinite(la)&&isFinite(lo)) map.setView([la,lo], isFinite(z)?z:8);
       return true;
     }catch(e){ return false; }
@@ -6961,7 +7029,18 @@ function refreshHash(){
   }, 1200);
 }
 map.on("moveend zoomend", refreshHash);
-map.on("moveend zoomend", ()=>{ if(openGroup) buildDrawer(GROUPS.find(g=>g.id===openGroup)); });
+/* `GROUPS` n'a jamais existe : la liste des categories s'appelle CAT. Des
+   qu'un tiroir etait ouvert, chaque moveend jetait un ReferenceError qui
+   remontait hors de map.invalidateSize() -- l'evenement `resize` qui suit
+   n'etait donc jamais emis, et wResize()/aResize() etaient sautes : le canevas
+   du vent gardait son ancienne taille sur une carte devenue plus large.
+   Le glissement de carte masquait le defaut (movestart ferme le tiroir avant),
+   invalidateSize non : elle emet moveend SANS movestart. */
+map.on("moveend zoomend", ()=>{
+  if(!openGroup) return;
+  const c=CAT.find(g=>g.id===openGroup);
+  if(c) buildDrawer(c);
+});
 /* Rapport de situation : un texte prêt à envoyer par message ou courriel */
 window.exportReport=function(){
   const c=map.getCenter();
@@ -6985,7 +7064,7 @@ window.exportReport=function(){
     L2.push("");
     L2.push("LOCALITÉS SUR L’AXE DU FEU ("+threatList.length+")");
     threatList.slice(0,10).forEach(t=>{
-      L2.push(` · ${t.pl.n} — ${t.lv[0]} · à ${fmtD(t.dist)} · délai estimé ${t.hrs<1?"< 1 h":t.hrs.toFixed(1)+" h"}`);
+      L2.push(` · ${t.pl.n} — ${t.lv[0]} · à ${fmtD(t.dist)} · délai estimé ${t.hrs<1?"< 1 h":nf(t.hrs,1)+" h"}`);
     });
   }
   const al=layers.alerts.getLayers().length;
