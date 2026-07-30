@@ -1893,9 +1893,22 @@ function fetchJSON(url, headers, ttl, timeout, _retry){
   if(NET_INFLIGHT.has(url)) return NET_INFLIGHT.get(url);
   if(netPaused(url)) return Promise.reject(new Error("source en pause (serveur saturé)"));
   const pr=rawFetch(url, {headers:headers||{}}, timeout)
-    .then(r=>{
-      if(r.status===429 && /open-meteo/.test(url)) omQuotaHit();
-      if(!r.ok){ netFail(url); throw new Error(r.status); }
+    .then(async r=>{
+      if(!r.ok){
+        /* Open-Meteo annonce un dépassement de plafond tantôt en 429, tantôt en
+           400, avec la raison dans le corps de la réponse. Le lire permet de
+           distinguer un vrai paramètre invalide d'un simple plafond atteint — et
+           d'écrire la raison réelle dans le journal au lieu d'un « HTTP 400 »
+           muet, impossible à diagnostiquer à distance. */
+        if(/open-meteo/.test(url)){
+          let raison="";
+          try{ const j=await r.clone().json(); raison=String((j&&j.reason)||""); }catch(e){}
+          if(r.status===429 || /limit|quota|exceed|minutely|hourly|daily/i.test(raison)) omQuotaHit();
+          if(raison && window.__diagPush)
+            window.__diagPush("RÉSEAU","Open-Meteo refuse ("+r.status+") : "+raison.slice(0,180));
+        }
+        netFail(url); throw new Error(r.status);
+      }
       return r.json();
     })
     .then(v=>{
@@ -3854,29 +3867,36 @@ async function drawSmoke(){
 }
 
 /* ===== RADAR DE PLUIE ANIMÉ (RainViewer) ===== */
-let rvFrames=[], rvIdx=0, rvTimer=0, rvHost="", rvLayers=[];
+let rvFrames=[], rvIdx=0, rvTimer=0, rvHost="", rvLayers=[], rvRenew=0;
 /* La tuile n’est téléchargée qu’au moment où l’image est jouée */
-/* Tuile transparente de 1 pixel. Sans elle, chaque tuile radar absente lève un
-   évènement d'erreur d'image : une zone sans couverture radar en produisait
-   plusieurs centaines en quelques secondes, qui remplissaient tout le journal.
-   Avec `errorTileUrl`, Leaflet substitue simplement cette image vide — ce qui
-   est la représentation exacte de la réalité : il n'y a pas de radar ici. */
+/* Tuile transparente de 1 pixel : évite d'afficher une icône d'image cassée là
+   où il n'y a pas de couverture radar. Attention, elle ne supprime PAS
+   l'évènement d'erreur — Leaflet ne substitue l'image qu'après coup. La seule
+   façon de ne plus avoir d'échec est de ne pas demander de tuile périmée, ce
+   dont s'occupe initRadar ci-dessous. */
 const RV_VIDE="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 function rvEnsure(i){
   if(rvLayers[i] || !rvFrames[i]) return;
   rvLayers[i]=L.tileLayer(`${rvHost}${rvFrames[i].path}/256/{z}/{x}/{y}/4/1_1.png`,
     {opacity:0, zIndex:190, attribution:"RainViewer", updateWhenIdle:true,
-     errorTileUrl:RV_VIDE,
-     /* RainViewer ne produit pas de tuiles radar au-delà du zoom 10 : les
-        demander garantissait un échec. Au-delà, on agrandit la tuile du zoom 10
-        au lieu d'en réclamer une qui n'existe pas — moins de requêtes, et elles
-        aboutissent. La précision d'un radar météo ne va de toute façon pas
-        au-delà du kilomètre. */
-     maxNativeZoom:10, maxZoom:19,
-     crossOrigin:true}).addTo(layers.radar);
+     errorTileUrl:RV_VIDE, maxZoom:19}).addTo(layers.radar);
+}
+/* Purge complète : à appeler AVANT toute requête et à l'extinction de la couche.
+   RainViewer fait tourner l'identifiant de ses images toutes les dix minutes.
+   Les couches d'une session précédente portent donc un chemin périmé, et elles
+   redemandaient leurs tuiles dès que le groupe était rattaché à la carte —
+   avant même que initRadar ait fini sa requête et les ait remplacées. Mesuré :
+   690 échecs en quelques secondes, tous sur un identifiant d'image expiré,
+   alors que la même URL en cours de validité répond 200. */
+function rvPurge(){
+  clearInterval(rvTimer); rvTimer=0;
+  clearTimeout(rvRenew); rvRenew=0;
+  layers.radar.clearLayers();
+  rvLayers=[]; rvFrames=[]; rvIdx=0;
 }
 async function initRadar(){
   if(!$("#tg-radar").checked) return;
+  rvPurge();
   try{
     setC("c-radar","…");
     const d=await fetchJSON("https://api.rainviewer.com/public/weather-maps.json");
@@ -3884,8 +3904,6 @@ async function initRadar(){
     const past=(d.radar&&d.radar.past)||[], now=(d.radar&&d.radar.nowcast)||[];
     const nf=PERF.radarFrames;
     rvFrames=past.slice(-nf).concat(now.slice(0,2));
-    layers.radar.clearLayers(); rvLayers=[];
-    rvIdx=0;
     rvEnsure(0); rvEnsure(1);
     if(rvLayers[0]) rvLayers[0].setOpacity(.72);
     clearInterval(rvTimer);
@@ -3898,6 +3916,10 @@ async function initRadar(){
       const fr=rvFrames[rvIdx];
       if(fr) setC("c-radar", new Date(fr.time*1000).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}));
     },760);
+    /* Les identifiants d'images expirent en une dizaine de minutes. Sur une carte
+       laissée ouverte, l'animation finirait par ne plus rien afficher du tout.
+       On renouvelle donc la liste avant l'échéance. */
+    rvRenew=setTimeout(()=>{ if($("#tg-radar").checked) initRadar(); }, 480000);
   }catch(e){ setC("c-radar","–"); }
 }
 
@@ -4089,9 +4111,25 @@ const WCELL = (()=>{
   try{
     const raw=JSON.parse((window.LS||localStorage).getItem("wcell")||"[]");
     const now=Date.now();
-    return new Map(raw.filter(e=>e[1] && e[1].exp>now));
+    /* On conserve aussi les cellules PÉRIMÉES, jusqu'à quatre heures après leur
+       échéance. Elles ne changent rien au fonctionnement normal — le calcul des
+       cellules manquantes teste déjà `exp < now`, donc elles seront rafraîchies
+       dès que le service répond. Mais quand le plafond horaire est atteint, un
+       champ de vent d'il y a deux heures vaut infiniment mieux qu'un écran vide,
+       à condition de le dire.
+       C'est exactement la situation rencontrée : 129 cellules en mémoire, toutes
+       jetées parce que périmées de trois minutes, et donc plus aucun vent
+       affichable alors que la donnée était là. */
+    return new Map(raw.filter(e=>e[1] && e[1].exp > now-4*3600e3));
   }catch(e){ return new Map(); }
 })();
+/* Le champ affiché est-il entièrement périmé ? Sert uniquement à l'annoncer. */
+function wStale(){
+  if(!WCELL.size) return false;
+  const now=Date.now();
+  for(const v of WCELL.values()) if(v.exp>now) return false;
+  return true;
+}
 let wcellSaveT=0;
 function wcellSave(){
   clearTimeout(wcellSaveT);
@@ -4156,7 +4194,13 @@ function seedBox(){
   };
 }
 function seedParts(full){
-  const q=seedBox(), N=PERF.parts;
+  const q=seedBox();
+  /* À l'échelle du globe, la grille de vent est nécessairement grossière : au-delà
+     d'un certain nombre de particules on ne gagne plus en lisibilité, seulement
+     en calcul. On en réduit donc le nombre en vue large, au lieu de couper
+     l'animation comme je l'avais fait à tort. */
+  const z=map.getZoom();
+  const N=Math.round(PERF.parts * (z<3.5 ? 0.45 : z<5 ? 0.7 : 1));
   if(full) wind.parts.length=0;
   if(q.n<=q.s || q.e<=q.w){ wind.parts.length=0; return; }
   const rnd=()=>({la:q.s+Math.random()*(q.n-q.s),
@@ -4295,7 +4339,24 @@ async function fetchWind(){
     updKmPx(); wResize(); wReposition(); seedParts(false);
     wind.pause=false;
     startLoop();
-  }catch(err){ setC("c-wind","–"); }
+  }catch(err){
+    /* CORRIGÉ : le semis des particules n'avait lieu QUE dans le chemin de
+       succès. Dès que la requête échouait — plafond météo atteint, par exemple —
+       il n'existait aucune particule, donc rien ne pouvait être tracé, même avec
+       des cellules déjà en mémoire depuis un précédent passage. Le vent
+       disparaissait complètement, et il fallait déplacer la carte pour qu'un
+       autre chemin de code veuille bien resemer. C'était la cause de « le vent
+       ne s'affiche plus du tout ».
+       Les particules ne dépendent pas du réseau : on les sème quand même et
+       l'animation continue sur ce qui est en cache. */
+    if(WCELL.size){
+      setC("c-wind", wStale() ? "relevé ancien" : "en cache");
+      updKmPx(); seedParts(false);
+      wind.pause=false; startLoop();
+    }else{
+      setC("c-wind", omPaused() ? "quota météo" : "–");
+    }
+  }
 }
 
 /* Une seule boucle pour le vent ET les avions : moins de charge que deux
@@ -4327,15 +4388,17 @@ function startLoop(){ if(!RAF && loopNeeded()) frame(); }
    observées en vue mondiale. Même chose près des pôles, où Mercator étire
    sans limite. On ne dessine pas ces segments, on renaît la particule. */
 const W_MAXSEG = 26;
-/* En dessous de ce zoom, l'animation du vent n'apprend rien : à l'échelle du
-   globe une particule couvre des centaines de kilomètres par image, ce qui
-   donne l'impression de vents à 1 000 km/h. On l'éteint franchement plutôt que
-   d'afficher une information fausse. */
-const W_MINZOOM = 3.5;
+/* J'avais d'abord éteint l'animation sous le zoom 3,5, en croyant que la vitesse
+   apparente était fausse à cette échelle. C'était traiter le symptôme : le pas
+   d'une particule est proportionnel au PIXEL (mag × 0,055), donc la vitesse à
+   l'écran est déjà constante quel que soit le zoom. Les traits délirants
+   venaient uniquement des franchissements d'antiméridien et des pôles, que le
+   garde-fou géométrique ci-dessus bloque désormais à la source.
+   Ce verrou masquait donc le vent pour rien — y compris à la vue par défaut, où
+   il ne s'affichait plus du tout. Il est retiré. */
 
 function wFrame(){
   if(wind.pause || !windOn() || !WCELL.size) return;
-  if(map.getZoom() < W_MINZOOM){ wClear(); setC("c-wind","zoom+"); return; }
   const s=map.getSize();
   wctx.globalCompositeOperation="destination-out";
   wctx.fillStyle="rgba(0,0,0,0.075)";
@@ -4373,7 +4436,22 @@ function wFrame(){
 /* Pendant un zoom, l’échelle change en continu : on efface pour éviter des
    traînées incohérentes. Pendant un simple déplacement, l’animation continue. */
 map.on("zoomstart", ()=>{ wind.pause=true; wClear(); });
-map.on("zoomend", ()=>{ updKmPx(); wClear(); wind.pause=false; startLoop(); });
+/* CORRIGÉ : après un changement de zoom, le vent restait invisible jusqu'à ce
+   qu'on déplace la carte. Deux raisons cumulées :
+   · les particules gardaient les positions semées pour l'ancienne emprise, donc
+     la plupart tombaient hors de la nouvelle vue et renaissaient sans rien tracer ;
+   · la grille de vent n'était rechargée que sur `moveend`, jamais sur `zoomend`,
+     et son pas dépend du zoom — après un zoom, aucune cellule ne correspondait
+     plus au niveau de détail demandé, donc `sampleUV` ne renvoyait rien.
+   On resème donc dans la nouvelle emprise et on redemande la grille tout de suite. */
+map.on("zoomend", ()=>{
+  updKmPx(); wClear();
+  wind.pause=false;
+  seedParts(true);
+  startLoop();
+  clearTimeout(wind.fetchT);
+  wind.fetchT=setTimeout(fetchWind, 350);
+});
 map.on("moveend", ()=>{
   if(!windOn()) return;
   seedParts(false);
@@ -5390,7 +5468,10 @@ $("#tg-complex").addEventListener("change",ev=>{
 });
 $("#tg-radar").addEventListener("change",ev=>{
   if(ev.target.checked){ map.addLayer(layers.radar); initRadar(); }
-  else{ map.removeLayer(layers.radar); clearInterval(rvTimer); setC("c-radar","–"); }
+  /* On purge à l'extinction : sinon les couches restent là avec leur chemin
+     d'image qui expirera, et elles redemanderaient toutes leurs tuiles au
+     prochain rallumage. */
+  else{ map.removeLayer(layers.radar); rvPurge(); setC("c-radar","–"); }
 });
 $("#tg-aq").addEventListener("change",ev=>{
   if(ev.target.checked){ map.addLayer(layers.aq); aqKey=""; loadAQ(); }
