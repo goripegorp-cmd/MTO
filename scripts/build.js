@@ -203,6 +203,99 @@ async function nws() {
   write("nws.json", { t: now, type: "FeatureCollection", features: f }, f.length + " vigilances");
 }
 
+/* ---------- Foyers satellite : vue mondiale ----------
+   Mesure qui a motivé cette tâche : la requête que le navigateur envoyait pour
+   la vue mondiale mettait 12,4 secondes. C'était de loin le poste le plus lent
+   de tout le chargement. La raison est simple : filtrer par une enveloppe
+   géographique qui couvre la planète entière coûte cher au serveur ArcGIS.
+
+   Il y a 59 820 détections VIIRS sur 24 h dans le monde. On n'en a pas besoin
+   de 59 820 pour une vue mondiale — on n'y dessine même plus les foyers
+   individuels, seulement les sinistres agrégés. On garde donc les plus
+   puissants, qui sont précisément ceux qui forment les sinistres visibles.
+
+   Le navigateur continue d'interroger la source en direct dès qu'on approche :
+   l'enveloppe est alors petite, la réponse rapide, et la précision totale. */
+async function hotspots() {
+  const VIIRS = "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0/query";
+  const MODIS = "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/MODIS_Thermal_v1/FeatureServer/1/query";
+  const CF = { low: 0, nominal: 1, high: 2 };
+
+  /* FILTRE DE FRAÎCHEUR, indispensable. La couche contient plus de 24 h
+     d'historique : trier par puissance sans borner la date remontait des
+     détections vieilles de plus de quatre jours, qui auraient formé des
+     sinistres fantômes sur la vue mondiale. Avec la borne, les âges vont de
+     2 à 13 h pour VIIRS et de 2 à 24 h pour MODIS — c'est bien « ce qui brûle
+     en ce moment ». */
+  const v = await get(VIIRS + "?where=acq_date%3E%3DCURRENT_TIMESTAMP-1"
+    + "&outFields=latitude,longitude,frp,confidence,acq_time,bright_ti4,scan,track"
+    + "&returnGeometry=false&outSR=4326&f=json&orderByFields=frp%20DESC&resultRecordCount=3000", 90000);
+  /* [lat, lon, frp, confiance, horodatage, température, scan, track, capteur]
+     Format positionnel : trois fois plus léger que le JSON verbeux d'ArcGIS. */
+  const out = (v.features || []).map(f => {
+    const a = f.attributes || {};
+    if (a.latitude == null || a.longitude == null) return null;
+    return [p3(a.latitude), p3(a.longitude), Math.round((a.frp || 0) * 10) / 10,
+      CF[String(a.confidence).toLowerCase()] ?? 1, a.acq_time || 0,
+      Math.round(a.bright_ti4 || 0), a.scan || 0.375, a.track || 0.375, 0];
+  }).filter(Boolean);
+
+  /* MODIS complète VIIRS : résolution plus grossière mais passages à d'autres
+     heures, souvent plus récents. Les deux réunis couvrent cinq satellites. */
+  try {
+    const m = await get(MODIS + "?where=ACQ_DATE%3E%3DCURRENT_TIMESTAMP-1"
+      + "&outFields=SCAN,TRACK,SATELLITE,CONFIDENCE,FRP,ACQ_DATE,BRIGHTNESS"
+      + "&outSR=4326&f=geojson&orderByFields=FRP%20DESC&resultRecordCount=1200&geometryPrecision=4", 90000);
+    const vus = new Set(out.map(h => Math.round(h[0] / 0.0045) + "_" + Math.round(h[1] / 0.0045)));
+    (m.features || []).forEach(f => {
+      const p = f.properties || {}, c = f.geometry && f.geometry.coordinates;
+      if (!c) return;
+      const k = Math.round(c[1] / 0.0045) + "_" + Math.round(c[0] / 0.0045);
+      if (vus.has(k)) return;                       /* déjà vu par VIIRS, plus fin */
+      const cn = typeof p.CONFIDENCE === "number" ? (p.CONFIDENCE >= 80 ? 2 : p.CONFIDENCE >= 30 ? 1 : 0)
+        : (CF[String(p.CONFIDENCE).toLowerCase()] ?? 1);
+      out.push([p3(c[1]), p3(c[0]), Math.round((p.FRP || 0) * 10) / 10, cn,
+        p.ACQ_DATE || 0, Math.round(p.BRIGHTNESS || 0), p.SCAN || 1, p.TRACK || 1, 1]);
+    });
+  } catch (e) { console.log("     MODIS indisponible : " + e.message); }
+
+  if (out.length < 100) { console.log("  !  foyers : trop peu de points (" + out.length + "), fichier conservé"); return false; }
+  out.sort(byKey(h => String(Math.round(1e6 - h[2] * 10)).padStart(9, "0") + "|" + h[0] + "|" + h[1]));
+  write("hot.json", { t: now, h: out }, out.length + " foyers (les plus puissants du monde)");
+  return true;
+}
+
+/* ---------- Qualité de l'air mondiale ----------
+   Même raisonnement que pour le vent : la grille de particules fines était
+   demandée par chaque visiteur, et elle échouait en 400 ou 429 dès que le
+   plafond horaire d'Open-Meteo était atteint. Grille de 12°, soit 435 points. */
+async function air() {
+  const STEP = 12, pts = [];
+  for (let la = -60; la <= 72; la += STEP)
+    for (let lo = -180; lo < 180; lo += STEP) pts.push([la, lo]);
+  const cells = [];
+  for (let i = 0; i < pts.length; i += 100) {
+    const chunk = pts.slice(i, i + 100);
+    try {
+      const d = await get("https://air-quality-api.open-meteo.com/v1/air-quality"
+        + "?latitude=" + chunk.map(p => p[0]).join(",")
+        + "&longitude=" + chunk.map(p => p[1]).join(",")
+        + "&current=european_aqi,pm2_5", 45000);
+      (Array.isArray(d) ? d : [d]).forEach((o, j) => {
+        if (!o || !o.current || !chunk[j]) return;
+        const aqi = o.current.european_aqi, pm = o.current.pm2_5;
+        if (aqi == null) return;
+        cells.push([chunk[j][0], chunk[j][1], Math.round(aqi), Math.round((pm || 0) * 10) / 10]);
+      });
+    } catch (e) { console.log("     bloc air " + (i / 100 + 1) + " : " + e.message); }
+    if (i + 100 < pts.length) await new Promise(r => setTimeout(r, 900));
+  }
+  if (cells.length < 100) { console.log("  !  air : trop peu de points (" + cells.length + "), fichier conservé"); return false; }
+  cells.sort(byKey(c => String(c[0]).padStart(5, "0") + "|" + String(c[1]).padStart(5, "0")));
+  write("air.json", { t: now, step: STEP, cells }, cells.length + " points de qualité de l'air");
+  return true;
+}
+
 /* ---------- Champ de vent mondial ----------
    POURQUOI CETTE TÂCHE EXISTE
    Open-Meteo plafonne à 5 000 mesures par heure et PAR ADRESSE IP. Chaque
@@ -329,7 +422,7 @@ async function effis() {
 
   const tasks = only === "slow"
     ? [["effis", effis]]
-    : [["quakes", quakes], ["eonet", eonet], ["gdacs", gdacs], ["nws", nws]];
+    : [["quakes", quakes], ["eonet", eonet], ["gdacs", gdacs], ["nws", nws], ["hotspots", hotspots]];
 
   let failed = 0;
   for (const [name, fn] of tasks) {
@@ -359,8 +452,12 @@ async function effis() {
       console.log("  …  vent " + (wAge === Infinity ? "absent" : "vieux de " + Math.round(wAge / 60e3) + " min") + " — reconstruction");
       windAt = now;
       try { await wind(); } catch (e) { console.log("  x  vent échec : " + e.message); }
-    } else if (fs.existsSync(wf)) {
-      PRESENT.push("wind");
+      /* La qualité de l'air suit le même rythme horaire que le vent : les deux
+         viennent d'Open-Meteo, autant grouper leur consommation. */
+      try { await air(); } catch (e) { console.log("  x  air échec : " + e.message); }
+    } else {
+      if (fs.existsSync(wf)) PRESENT.push("wind");
+      if (fs.existsSync(path.join(OUT, "air.json"))) PRESENT.push("air");
     }
   }
 

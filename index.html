@@ -3047,9 +3047,41 @@ function drawHotspots(){
   const caches=src.length-list.length;
   setC("c-hot", list.length + (caches>0?" / "+src.length:"") + (tlH<48?" rejeu":""));
 }
+/* Conversion du format positionnel du robot vers celui du navigateur.
+   [lat, lon, frp, confiance, horodatage, température, scan, track, capteur] */
+const CF_TXT=["low","nominal","high"];
+function hotFromPre(a, now){
+  return {la:a[0], lo:a[1], frp:a[2], cf:CF_TXT[a[3]]||"nominal",
+          t:a[4], bt:a[5], scan:a[6], track:a[7],
+          sat: a[8]===1 ? "MODIS 1 km" : "VIIRS 375 m",
+          hrs: a[4] ? (now-a[4])/36e5 : 99};
+}
+
 async function loadHotspots(){
   if(!$("#tg-hotspots").checked) return;
   const b=map.getBounds(), z=map.getZoom();
+
+  /* VUE LARGE : fichier pré-calculé.
+     Mesuré en production : la requête envoyée pour la vue mondiale mettait
+     12,4 secondes — de loin le poste le plus lent de tout le chargement.
+     Filtrer par une enveloppe couvrant la planète coûte très cher au serveur.
+     Le robot le fait une fois pour tous, et le CDN sert 51 ko compressés.
+     En dessous du zoom 7 on ne dessine de toute façon pas les foyers un par un :
+     ce fichier alimente exactement ce dont on a besoin, les sinistres agrégés.
+     Dès qu'on approche, on repasse en direct — l'enveloppe est alors petite, la
+     réponse rapide, et la précision totale. */
+  if(z<7){
+    const pre=await preload("hot", 3*3600e3);
+    if(pre && pre.h && pre.h.length){
+      const now=Date.now();
+      hotRaw=pre.h.map(a=>hotFromPre(a, now));
+      hotFresh=hotRaw.length?Math.min(...hotRaw.map(h=>h.hrs)):null;
+      updFresh();
+      hotBox=null; hotKey="pre"; hotDetail=false;
+      drawHotspots(); drawComplexes();
+      return;
+    }
+  }
   const sb=snapBox(b, zoomStep(z,2), 0.35);
   let w=sb.w, e=sb.e;
   const so=sb.s, no=sb.n;
