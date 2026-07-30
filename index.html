@@ -1513,7 +1513,7 @@ window.fetch=function(u,o){
     if(r.ok){ SRC[h].ok++; SRC[h].last="OK "+dt+" ms"; }
     else{
       SRC[h].ko++; SRC[h].last="HTTP "+r.status;
-      push("RÉSEAU","HTTP "+r.status+" · "+short(url)+(r.status===429?"  (serveur saturé — la carte réessaiera)":""));
+      push("RÉSEAU","HTTP "+r.status+" · "+short(url)+(r.status===429?"  (plafond atteint — la source est mise en pause, pas de nouvel essai immédiat)":""));
     }
     return r;
   }).catch(function(e){
@@ -1774,13 +1774,36 @@ function netPaused(u){ const g=NET_GUARD.get(netHost(u)); return !!(g && g.until
 /* Le service météo gratuit plafonne à 5 000 mesures par heure et par adresse IP.
    Quand ce plafond est atteint, tout est refusé — ce n'est pas une panne, et
    surtout ce n'est pas réparable côté carte. Autant le dire clairement. */
-let omBlocked=0;
+let omBlocked=0, omStrikes=0;
+/* Le plafond est compté PAR ADRESSE IP et pour l'ensemble du service : mettre
+   en pause le seul hôte qui a répondu 429 ne sert à rien, les autres refuseront
+   pareil. On les suspend donc tous ensemble. */
+const OM_HOSTS=["api.open-meteo.com","air-quality-api.open-meteo.com",
+  "flood-api.open-meteo.com","geocoding-api.open-meteo.com","marine-api.open-meteo.com"];
+const OM_COOL=[0, 180000, 600000, 1800000];   /* 3 min, 10 min, 30 min */
+function omPaused(){
+  const t=Date.now();
+  return OM_HOSTS.some(h=>{ const g=NET_GUARD.get(h); return !!(g && g.until>t); });
+}
+/* CORRIGÉ : cette fonction se contentait d'afficher un message. Elle ne
+   bloquait AUCUNE requête, si bien qu'après un premier refus la carte
+   continuait d'interroger le service — d'où deux erreurs 429 à cinq secondes
+   d'intervalle dans le journal. Elle suspend maintenant réellement le service,
+   avec une attente qui s'allonge à chaque refus. */
 function omQuotaHit(){
-  if(Date.now()-omBlocked < 600000) return;
+  omStrikes=Math.min(3, omStrikes+1);
+  const cool=OM_COOL[omStrikes];
+  const until=Date.now()+cool;
+  OM_HOSTS.forEach(h=>NET_GUARD.set(h,{n:0,until}));
+  if(Date.now()-omBlocked < 600000) return;      /* message dédupliqué */
   omBlocked=Date.now();
-  toast("Quota météo atteint sur votre connexion — le service gratuit limite à 5 000 mesures par heure. Tout revient de soi-même, généralement en moins d’une heure. Les incendies, séismes et alertes continuent de fonctionner.", 12000);
+  const min=Math.round(cool/60000);
+  toast("Quota météo atteint sur votre connexion — le service gratuit limite à 5 000 mesures par heure. "
+    + "Les requêtes météo sont suspendues "+min+" min, puis reprendront seules. "
+    + "Incendies, séismes et alertes continuent de fonctionner normalement.", 12000);
   if(window.__diagPush) window.__diagPush("ALERTE",
-    "Quota Open-Meteo epuise pour cette adresse IP (5 000 mesures/heure). Ce n'est pas un defaut de la carte : les donnees reviennent seules.");
+    "Quota Open-Meteo epuise pour cette adresse IP (5 000 mesures/heure). Service suspendu "
+    + min + " min pour ne pas insister. Ce n'est pas un defaut de la carte.");
 }
 function netFail(u, cool){
   const h=netHost(u), g=NET_GUARD.get(h)||{n:0,until:0};
@@ -1857,6 +1880,10 @@ function fetchJSON(url, headers, ttl, timeout, _retry){
     })
     .then(v=>{
       netOk(url); noteNetOutcome(true);
+      /* Un appel météo qui aboutit signifie que le plafond est repassé : on
+         remet le compteur d'échecs à zéro pour ne pas garder une attente de
+         trente minutes après un simple pic passager. */
+      if(/open-meteo/.test(url) && omStrikes) omStrikes=0;
       if(ttl){
         NET_CACHE.set(url,{v:v,exp:Date.now()+ttl});
         if(NET_CACHE.size>140) NET_CACHE.delete(NET_CACHE.keys().next().value);
@@ -2672,9 +2699,15 @@ function omFetch(url, headers, ttl, timeout, rapide){
 function omThrottle(fn, cost, rapide){
   const c=Math.max(1, cost||1);
   if(rapide && c<=3){
+    /* La voie rapide court-circuitait toute régulation : elle partait même
+       quand le service venait de refuser. On respecte la suspension, et on
+       échoue tout de suite pour que l'appelant affiche « indisponible » au lieu
+       d'insister auprès d'un serveur qui vient de dire non. */
+    if(omPaused()) return Promise.reject(new Error("météo suspendue (quota atteint)"));
     omLog.push({t:Date.now(), n:c}); omSave();
     return Promise.resolve().then(fn);
   }
+  if(omPaused()) return Promise.reject(new Error("météo suspendue (quota atteint)"));
   const run = omChain.then(async ()=>{
     let used=omUsed();
     if(used+c>OM_LIMIT && omLog.length){
@@ -5872,17 +5905,9 @@ window.__diagUptime=()=>({
 });
 
 /* ================= Orchestration ================= */
-/* L’écran de départ n’apparaît qu’une fois par session */
-function sessionStorage_ok(){
-  try{
-    if(sessionStorage.getItem("pedZone")){ 
-      const z=sessionStorage.getItem("pedZone");
-      if(z&&z!=="_") applyCountry(z,true);
-      return true;
-    }
-    return false;
-  }catch(e){ return false; }
-}
+/* La zone mémorisée est désormais lue AVANT le premier chargement, dans le bloc
+   de démarrage en bas de fichier — l'ancienne fonction sessionStorage_ok(), qui
+   déclenchait un second chargement après coup, a été supprimée. */
 function setMaj(){
   const t=new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
   setC("maj",t); setC("ch-maj",t);
@@ -5943,13 +5968,53 @@ function scheduleCycle(){
 scheduleCycle();
 
 wResize(); wReposition();
-staggered([()=>loadEonet(),()=>loadQuakes()], 300).then(()=>{
+
+/* ---------- Démarrage : UN SEUL chargement ----------
+   CORRIGÉ : on chargeait d'abord la vue mondiale, puis, une fois ce chargement
+   terminé, on lisait la zone mémorisée en session et on rechargeait tout pour
+   la bonne emprise. Le premier chargement était donc intégralement jeté — deux
+   fois le même travail à une seconde d'intervalle, visible en double dans le
+   journal (« 320 incendies references ... ecartes » écrit deux fois à la même
+   seconde). Même chose avec un lien de partage, qui ajoutait un troisième
+   chargement.
+
+   On décide donc de la destination AVANT de charger quoi que ce soit :
+   lien de partage, puis zone mémorisée, puis vue mondiale par défaut. */
+const startHash = location.hash && location.hash.length>3;
+const startZone = (function(){ try{ return sessionStorage.getItem("pedZone")||""; }catch(e){ return ""; } })();
+
+let premierChargement;
+if(startHash && applyShareURL()){
+  /* Le lien a déjà posé la vue, les couches et le filtre : il ne reste qu'à charger. */
+  syncUI();
+  premierChargement = loadAll();
+}else if(startZone && startZone!=="_"){
+  /* applyCountry pose l'emprise ET charge tout ce qu'il faut, une seule fois. */
+  premierChargement = applyCountry(startZone, true);
+}else{
+  premierChargement = staggered([()=>loadEonet(),()=>loadQuakes()], 300);
+}
+
+premierChargement.then(()=>{
   window.__appReady=true;
   hideLoader(); setMaj(); syncUI();
-  if(applyShareURL()){ setTimeout(()=>{ syncUI(); loadAll(); },400); }
-  else if(!sessionStorage_ok()) initWelcome();
+  if(!startHash && !startZone) initWelcome();
   toast("Interface refondue : couches regroupées par thème, icônes vectorielles, rapport texte et °C/°F.");
-  idle(()=>{ loadHotspots(); loadAlerts(); loadPerims(); loadCities(); fetchWind(); if($("#tg-radar").checked) initRadar(); if($("#tg-aq").checked) loadAQ(); if($("#tg-flood").checked) loadFlood(); if($("#tg-fwi").checked) initFWI(); loadForecastGrid(true); });
+  idle(()=>{
+    /* Ces couches ont déjà été chargées si le démarrage est passé par un lien de
+       partage ou une zone mémorisée : les redemander ne ferait que dupliquer le
+       travail. Seule la vue mondiale par défaut, qui ne charge d'abord que les
+       événements et les séismes, a besoin du complément. */
+    if(!startHash && !startZone){
+      loadHotspots(); loadAlerts(); loadPerims(); loadCities(); loadEuba();
+    }
+    fetchWind();
+    if($("#tg-radar").checked) initRadar();
+    if($("#tg-aq").checked) loadAQ();
+    if($("#tg-flood").checked) loadFlood();
+    if($("#tg-fwi").checked) initFWI();
+    loadForecastGrid(true);
+  });
 });
 setTimeout(hideLoader,9000);
 </script>
