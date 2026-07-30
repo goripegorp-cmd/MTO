@@ -442,6 +442,25 @@ body.base-light #map{background:#cfd8e3}
 .chk.n .ic{color:var(--t3)}
 .badge{display:inline-block;border-radius:8px;padding:4px 10px;font:700 12px var(--mono);
   color:#0a0f1c;background:var(--b,#ffc46b);margin:7px 0 2px}
+/* Repère de sinistre : remplace l'ancien contour d'enveloppe. Il porte la
+   surface réellement brûlée et son état par la couleur ; un anneau plein pour
+   un feu actif, pointillé pour un feu zombie qui peut se rallumer. */
+.fbadge{position:absolute;transform:translate(-50%,-50%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  width:34px;height:34px;border-radius:50%;
+  background:rgba(9,14,24,.86);border:2px solid var(--c,#888);color:var(--c,#888);
+  box-shadow:0 1px 5px rgba(0,0,0,.6);cursor:pointer;line-height:1}
+.fbadge.big{width:42px;height:42px;border-width:2.5px}
+.fbadge.zombie{border-style:dashed;background:rgba(9,14,24,.62)}
+.fbadge b{font:700 11px/1 var(--mono);color:#fff;font-variant-numeric:tabular-nums}
+.fbadge.big b{font-size:13px}
+.fbadge i{font:500 7.5px/1 system-ui,sans-serif;font-style:normal;letter-spacing:.06em;
+  margin-top:1px;opacity:.85}
+.fbadge.actif{animation:fpulse 2.4s ease-in-out infinite}
+@keyframes fpulse{0%,100%{box-shadow:0 1px 5px rgba(0,0,0,.6)}
+  50%{box-shadow:0 1px 5px rgba(0,0,0,.6),0 0 0 4px rgba(255,61,31,.18)}}
+@media (prefers-reduced-motion:reduce){.fbadge.actif{animation:none}}
+
 /* État d'un sinistre : plaque franche, lisible avant même de lire la phrase */
 .stbadge{display:inline-block;margin:4px 0 6px;padding:3px 9px;border-radius:3px;
   border:1px solid var(--c,#888);color:var(--c,#888);
@@ -2852,7 +2871,26 @@ function drawHotspots(){
   const z=map.getZoom(), real=z>=9.5;
   const cap=PERF.hotDraw;
   const src=tlFilter(hotRaw);
-  const list=src.length>cap ? src.slice(0,cap) : src;
+
+  /* DÉTAIL PROGRESSIF.
+     En dessous du zoom 5, on regarde un continent : des centaines de points de
+     deux pixels y forment une bouillie illisible, et chacun coûte un objet de
+     dessin. À cette échelle, les repères de sinistre — un point par incendie,
+     avec sa surface — disent tout ce qui est utile. Les foyers individuels
+     n'apparaissent qu'en approchant, et leur empreinte réelle au sol qu'au
+     zoom 9,5. Plus on zoome, plus c'est précis : jamais l'inverse. */
+  if(z<5){
+    setC("c-hot", src.length+" · zoom+");
+    return;
+  }
+
+  /* CHAMP DE VISION. Un foyer hors de l'écran ne se voit pas : on ne le dessine
+     pas. La marge de 25 % évite tout trou visible pendant un déplacement, et
+     les données restent en mémoire — se déplacer ne relance donc aucune
+     requête, seul le tracé est refait. */
+  const vb=map.getBounds().pad(0.25);
+  const vus=src.filter(h=>h.la>=vb.getSouth()&&h.la<=vb.getNorth()&&h.lo>=vb.getWest()&&h.lo<=vb.getEast());
+  const list=vus.length>cap ? vus.slice(0,cap) : vus;
   const batch=[];
   for(const h of list){
     const col=frpColor(h.frp);
@@ -2875,7 +2913,8 @@ function drawHotspots(){
     batch.push(lay);
   }
   layers.hotspots.addLayer(L.layerGroup(batch));
-  setC("c-hot", list.length + (tlH<48?" rejeu":""));
+  const caches=src.length-list.length;
+  setC("c-hot", list.length + (caches>0?" / "+src.length:"") + (tlH<48?" rejeu":""));
 }
 async function loadHotspots(){
   if(!$("#tg-hotspots").checked) return;
@@ -2996,6 +3035,13 @@ async function loadEuba(){
 /* Rafraîchissement au déplacement (groupé, sans surcharger les serveurs) */
 let aqT=0;
 map.on("moveend zoomend",()=>{
+  /* Retracé IMMÉDIAT, sans réseau : les données sont déjà en mémoire, seul le
+     filtrage par champ de vision change. C'est ce qui rend le déplacement
+     instantané malgré le masquage de tout ce qui est hors écran — sans cela,
+     une zone découverte en glissant resterait vide jusqu'au prochain appel
+     réseau, une seconde plus tard. */
+  drawHotspots(); drawComplexes();
+  /* Les appels réseau, eux, restent différés et regroupés. */
   clearTimeout(hotT); hotT=setTimeout(loadHotspots,1000);
   clearTimeout(ebT);  ebT=setTimeout(loadEuba,2200);
   clearTimeout(aqT);  aqT=setTimeout(loadAQ,2400);
@@ -3126,6 +3172,25 @@ function fireState(fresh, trend){
     label:"EN COURS — activité stable", why:"La puissance rayonnée mesurée ne montre pas de tendance nette."};
 }
 
+/* Les trois seules catégories qui intéressent réellement quelqu'un qui regarde
+   la carte, telles que le propriétaire les a formulées :
+     actif       ça brûle maintenant
+     extinction  les secours sont dessus, l'activité recule
+     zombie      le sol a brûlé, plus de front, mais ça peut repartir
+   Les sept états fins servent à nuancer la fiche ; ces trois-là servent à
+   décider ce qu'on dessine et ce qu'on écrit en gros. */
+const FIRE_BUCKET = {
+  progression:{k:"actif",      nm:"ACTIF",      col:"#ff1744"},
+  actif:      {k:"actif",      nm:"ACTIF",      col:"#ff3d1f"},
+  stable:     {k:"actif",      nm:"ACTIF",      col:"#ff6d00"},
+  baisse:     {k:"extinction", nm:"EN EXTINCTION", col:"#c8cf4a"},
+  maitrise:   {k:"extinction", nm:"EN EXTINCTION", col:"#7fc45a"},
+  declin:     {k:"extinction", nm:"EN EXTINCTION", col:"#e0a33c"},
+  residuel:   {k:"zombie",     nm:"ZOMBIE",     col:"#b5a06a"},
+  eteint:     {k:"zombie",     nm:"ZOMBIE",     col:"#7d8ba6"}
+};
+const ZOMBIE_WHY="Le sol a brûlé et plus aucun front n’est détecté du ciel, mais des points chauds peuvent subsister sous la litière : un feu de ce type se rallume parfois plusieurs jours plus tard sous l’effet du vent.";
+
 function analyseComplex(g){
   const n=g.length;
   const frp=g.reduce((a,p)=>a+(p.frp||0),0);
@@ -3172,20 +3237,25 @@ function analyseComplex(g){
 function drawComplexes(){
   layers.complexes.clearLayers();
   if(!$("#tg-complex").checked || !hotRaw.length){ setC("c-complex",0); return; }
+  /* Même règle de champ de vision que pour les foyers, avec une marge plus
+     large : un repère de sinistre juste hors écran doit apparaître dès le début
+     du déplacement, sans attendre. */
+  const vb=map.getBounds().pad(0.5);
   const cx=buildComplexes(tlFilter(hotRaw)).map(analyseComplex)
-    .filter(c=>c.area>=0.4).sort((a,b)=>b.frp-a.frp).slice(0,40);
+    .filter(c=>c.area>=0.4 && c.c[0]>=vb.getSouth() && c.c[0]<=vb.getNorth()
+                           && c.c[1]>=vb.getWest()  && c.c[1]<=vb.getEast())
+    .sort((a,b)=>b.frp-a.frp).slice(0,40);
   for(const c of cx){
-    const st=c.st, col=st.col, mort=(st.key==="eteint"||st.key==="residuel");
-    if(c.hull){
-      /* Liseré blanc de lisibilité, atténué sur un feu éteint pour qu'il ne
-         tire pas l'œil autant qu'un sinistre en cours. */
-      L.polygon(c.hull,{renderer:cnv,color:"#fff",weight:mort?2.5:4,
-        opacity:mort?.2:.45,fill:false}).addTo(layers.complexes);
-      /* Trait pointillé et remplissage presque nul pour un feu éteint :
-         la surface brûlée reste lisible, le sinistre ne se lit plus comme actif. */
-      L.polygon(c.hull,{renderer:cnv,color:col,weight:st.w,opacity:mort?.85:1,
-        dashArray:st.dash||null,fillColor:col,fillOpacity:st.fill}).addTo(layers.complexes);
-    }
+    const st=c.st, bk=FIRE_BUCKET[st.key]||FIRE_BUCKET.stable, col=bk.col;
+    const mort=(bk.k==="zombie");
+    /* PLUS DE CONTOUR D'ENVELOPPE.
+       L'enveloppe convexe englobait tout le terrain entre les foyers : sur le
+       massif landais, elle laissait croire que la totalité de la zone avait
+       brûlé, villages compris, alors que le feu s'était arrêté par endroits.
+       C'était visuellement spectaculaire et factuellement faux. On ne garde que
+       les empreintes satellites réelles — les « bulles » — plus un point unique
+       qui porte le bilan du sinistre. Ce qui est peint correspond désormais
+       exactement à ce qui a été mesuré au sol. */
     let vecTxt="";
     /* Un feu éteint ne progresse plus : dessiner une flèche de propagation
        serait faux. On l'écrit explicitement plutôt que de laisser le doute. */
@@ -3204,9 +3274,10 @@ function drawComplexes(){
     }
     const html=`<div class="pp-t" style="color:${col}">${ic(mort?"smoke":"flame","x18")}${mort?"Zone brûlée":"Incendie"} — ${c.area>=1?c.area.toFixed(1)+" km²":Math.round(c.area*100)+" ha"}</div>
       <div class="pp-cat">Foyers regroupés · analyse automatique</div>
-      <div class="stbadge" style="--c:${col}">${st.nm.toUpperCase()}</div>
+      <div class="stbadge" style="--c:${col}">${bk.nm}${bk.k!=="zombie"?" · "+st.nm:""}</div>
       <div class="pp-row" style="color:${col};font-weight:600">${st.label}</div>
       <div class="pp-row" style="color:#8fa4cc;font-size:11.5px">${st.why}</div>
+      ${bk.k==="zombie"?`<div class="pp-warn">${ZOMBIE_WHY}</div>`:""}
       <div class="pp-row"><span class="fresh" style="background:${c.fresh<6?"#4be3a4":c.fresh<24?"#ffc46b":"#8fa4cc"}"></span>Détection la plus récente : il y a <b>${c.fresh<1?"moins d’1 h":Math.round(c.fresh)+" h"}</b></div>
       <div class="pp-row">Surface <b>réellement détectée en feu</b> : <b>${(c.burned*100).toLocaleString("fr-FR",{maximumFractionDigits:0})} ha</b><br><span style="color:#8fa4cc">somme des empreintes satellites, recouvrements retirés</span></div>
       <div class="pp-row">Zone concernée (enveloppe) : <b>${(c.area*100).toLocaleString("fr-FR",{maximumFractionDigits:0})} ha</b> · <b>${c.n}</b> foyers<br><span style="color:#8fa4cc">périmètre englobant — inclut le terrain non brûlé entre les foyers</span></div>
@@ -3216,9 +3287,16 @@ function drawComplexes(){
       <a class="pp-link" href="#" onclick="fireAnalysis(${c.c[0]},${c.c[1]},'Incendie',${c.t0},${c.t1});return false">${ic("projection","x14")}Prévoir la propagation (météo et règle des 30)</a><br>
       <a class="pp-link" href="#" onclick="showNews(${c.c[0]},${c.c[1]},'fire','Incendie — actualités');return false">${ic("news","x14")}Actualités : évacuations, bilans, moyens engagés</a>
       <div class="pp-warn">Surface et direction calculées à partir des détections satellites réelles. Ce n’est pas un relevé de terrain : les pompiers font foi.</div>`;
-    const clickable = c.hull ? L.polygon(c.hull,{renderer:cnv,color:col,weight:1,opacity:0,fillOpacity:.01})
-                             : L.circle(c.c,{renderer:cnv,radius:600,opacity:0,fillOpacity:.01});
-    clickable.bindPopup(html,{maxWidth:mqMobile.matches?260:320}).addTo(layers.complexes);
+    /* Un seul repère par sinistre, à son barycentre : la surface en hectares et
+       l'état en trois lettres se lisent sans ouvrir la fiche. C'est ce point qui
+       remplace le contour — « il y a ça, ici », comme demandé. */
+    const gros = c.burned*100 >= 500 || c.frp >= 400;
+    L.marker(c.c,{icon:L.divIcon({className:"",iconSize:[0,0],
+        html:`<div class="fbadge ${bk.k}${gros?" big":""}" style="--c:${col}">`
+           + `<b>${c.burned*100>=1000?Math.round(c.burned*100/100)/10+"k":Math.round(c.burned*100)}</b>`
+           + `<i>ha</i></div>`}),
+      zIndexOffset: bk.k==="actif"?600:bk.k==="extinction"?300:100})
+      .bindPopup(html,{maxWidth:mqMobile.matches?260:320}).addTo(layers.complexes);
   }
   setC("c-complex",cx.length);
   lastCx=cx;
@@ -3996,19 +4074,35 @@ function updKmPx(){
 }
 
 /* Semis : uniquement les particules manquantes, jamais un redémarrage complet */
+/* Domaine de semis, borné.
+   `map.getBounds()` peut renvoyer des longitudes bien au-delà de ±180 — avec
+   worldCopyJump et en vue mondiale, l'ouest tombe couramment vers -250. Une
+   particule semée là voyait sa longitude repliée par la projection au premier
+   déplacement, et son segment traversait la carte de bord à bord. C'est la
+   cause racine des barres horizontales ; on borne donc à la source, et la
+   latitude est limitée à ±78° où Mercator reste exploitable. */
+function seedBox(){
+  const b=map.getBounds();
+  return {
+    s: Math.max(-78, b.getSouth()), n: Math.min(78, b.getNorth()),
+    w: Math.max(-180, b.getWest()), e: Math.min(180, b.getEast())
+  };
+}
 function seedParts(full){
-  const b=map.getBounds(), N=PERF.parts;
+  const q=seedBox(), N=PERF.parts;
   if(full) wind.parts.length=0;
-  const rnd=()=>({la:b.getSouth()+Math.random()*(b.getNorth()-b.getSouth()),
-                  lo:b.getWest()+Math.random()*(b.getEast()-b.getWest()),
+  if(q.n<=q.s || q.e<=q.w){ wind.parts.length=0; return; }
+  const rnd=()=>({la:q.s+Math.random()*(q.n-q.s),
+                  lo:q.w+Math.random()*(q.e-q.w),
                   age:Math.floor(Math.random()*70), max:60+Math.random()*80});
   while(wind.parts.length<N) wind.parts.push(rnd());
   if(wind.parts.length>N) wind.parts.length=N;
 }
 function respawn(p){
-  const b=map.getBounds();
-  p.la=b.getSouth()+Math.random()*(b.getNorth()-b.getSouth());
-  p.lo=b.getWest()+Math.random()*(b.getEast()-b.getWest());
+  const q=seedBox();
+  if(q.n<=q.s || q.e<=q.w){ p.age=1e9; return; }
+  p.la=q.s+Math.random()*(q.n-q.s);
+  p.lo=q.w+Math.random()*(q.e-q.w);
   p.age=0; p.max=60+Math.random()*80;
 }
 
@@ -4159,8 +4253,22 @@ function frame(){
   aFrame();
 }
 function startLoop(){ if(!RAF && loopNeeded()) frame(); }
+/* Longueur maximale d'un segment de vent, en pixels. Tout tracé plus long est
+   un artefact de projection, jamais un vent réel : une particule qui franchit
+   l'antiméridien voit sa longitude repliée par la projection et le segment
+   traverse alors la carte entière — ce sont les « barres » horizontales
+   observées en vue mondiale. Même chose près des pôles, où Mercator étire
+   sans limite. On ne dessine pas ces segments, on renaît la particule. */
+const W_MAXSEG = 26;
+/* En dessous de ce zoom, l'animation du vent n'apprend rien : à l'échelle du
+   globe une particule couvre des centaines de kilomètres par image, ce qui
+   donne l'impression de vents à 1 000 km/h. On l'éteint franchement plutôt que
+   d'afficher une information fausse. */
+const W_MINZOOM = 3.5;
+
 function wFrame(){
   if(wind.pause || !windOn() || !WCELL.size) return;
+  if(map.getZoom() < W_MINZOOM){ wClear(); setC("c-wind","zoom+"); return; }
   const s=map.getSize();
   wctx.globalCompositeOperation="destination-out";
   wctx.fillStyle="rgba(0,0,0,0.075)";
@@ -4169,6 +4277,9 @@ function wFrame(){
   wctx.lineWidth=1.1; wctx.lineCap="round";
   const km=wind.kmpx;
   for(const p of wind.parts){
+    /* Hors du domaine utile : longitude repliée, ou latitude où la projection
+       n'a plus de sens. On renaît avant même d'échantillonner. */
+    if(p.lo<-180 || p.lo>180 || p.la>78 || p.la<-78){ respawn(p); continue; }
     const uv=sampleUV(p.la,p.lo);
     if(!uv){ respawn(p); continue; }
     const mag=Math.hypot(uv[0],uv[1]);
@@ -4179,6 +4290,8 @@ function wFrame(){
     const np=destPoint(p.la,p.lo,brg,stepKm);
     const a=map.latLngToContainerPoint([p.la,p.lo]);
     const c=map.latLngToContainerPoint([np[0],np[1]]);
+    /* Garde-fou géométrique : un segment anormalement long est un artefact. */
+    if(Math.abs(c.x-a.x)>W_MAXSEG || Math.abs(c.y-a.y)>W_MAXSEG){ respawn(p); continue; }
     if(a.x>-40 && a.y>-40 && a.x<s.x+40 && a.y<s.y+40){
       wctx.strokeStyle=wcol(mag);
       wctx.beginPath(); wctx.moveTo(a.x,a.y); wctx.lineTo(c.x,c.y); wctx.stroke();
