@@ -2016,18 +2016,91 @@ async function preload(name, maxAgeMs){
 window.__preState=()=>PRE;
 
 /* ---------- Carte ---------- */
-const map = L.map("map", {zoomControl:false, worldCopyJump:true, zoomSnap:.5, minZoom:2,
+/* ---------- Bornes de la carte ----------
+   CORRIGÉ : aucune limite n'était posée, on pouvait donc faire sortir la caméra
+   de la planète et se retrouver dans un vide noir sous l'Antarctique ou
+   au-dessus du pôle Nord — sans fond de carte, sans donnée, sans rien.
+   La projection de Mercator n'existe qu'entre -85,05° et 85,05° : au-delà il
+   n'y a littéralement pas de monde à afficher. On borne donc la latitude, et
+   `maxBoundsViscosity` à 1 en fait un mur franc plutôt qu'un élastique.
+   La longitude reste volontairement libre sur plusieurs tours : faire défiler
+   la carte d'est en ouest sans interruption est utile, et ne mène jamais dans
+   le vide puisque le monde s'y répète. */
+const MERC_MAX = 85.05112878;
+const map = L.map("map", {zoomControl:false, worldCopyJump:true, zoomSnap:.5,
+  minZoom:2, maxZoom:20,
+  maxBounds: L.latLngBounds([-MERC_MAX, -1080], [MERC_MAX, 1080]),
+  maxBoundsViscosity: 1,
   preferCanvas:true}).setView([22, 8], mqMobile.matches ? 2 : 2.5);
+/* `maxBounds` seul ne suffit pas : il retient bien un `setView`, mais un
+   glissement rapide ou l'inertie du doigt passent au travers — mesuré, la
+   latitude tombait à -90 et l'écran affichait le vide noir sous l'Antarctique.
+   On replace donc la vue à chaque mouvement, en calant le BORD de l'écran sur
+   le bord du monde plutôt que son centre : ainsi il n'y a jamais de bande vide,
+   même d'un pixel. Le drapeau évite que la correction se rappelle elle-même. */
+let clampEnCours=false;
+function clampVue(){
+  if(clampEnCours) return;
+  clampEnCours=true;
+  /* Correction ITÉRATIVE. Un seul passage ne suffisait pas : le repositionnement
+     déclenche lui-même un mouvement, que le drapeau anti-récursion bloque, et il
+     restait deux centièmes de degré de vide après un glissement extrême.
+     Trois passages suffisent largement à converger ; la boucle sort dès qu'il
+     n'y a plus rien à corriger. La marge absorbe l'imprécision en virgule
+     flottante. */
+  const M=MERC_MAX-0.02;
+  for(let i=0;i<4;i++){
+    const b=map.getBounds(), c=map.getCenter();
+    let corr=0;
+    if(b.getNorth()>M)       corr=-(b.getNorth()-M);
+    else if(b.getSouth()<-M) corr=(-M-b.getSouth());
+    if(!corr) break;
+    const lat=Math.max(-M, Math.min(M, c.lat+corr));
+    if(Math.abs(lat-c.lat)<1e-7) break;
+    map.setView([lat, c.lng], map.getZoom(), {animate:false});
+  }
+  clampEnCours=false;
+}
+
+/* Zoom minimal calculé d'après la hauteur de l'écran.
+   Recentrer ne suffit pas quand l'écran est PLUS HAUT que la planète : à un
+   zoom trop faible, des bandes vides apparaissent en haut et en bas quoi qu'on
+   fasse. Le monde mesure 256 × 2^zoom pixels de haut ; on interdit donc de
+   descendre sous le zoom où cette hauteur couvre l'écran. Recalculé à chaque
+   redimensionnement, et sur mobile en rotation d'écran. */
+function ajusteZoomMini(){
+  const h=map.getSize().y;
+  if(!h) return;
+  const zMini=Math.max(2, Math.ceil(Math.log2(h/256)*2)/2);
+  if(map.getMinZoom()!==zMini){
+    map.setMinZoom(zMini);
+    if(map.getZoom()<zMini) map.setZoom(zMini,{animate:false});
+  }
+}
+map.on("move zoomend", clampVue);
+map.on("resize", ()=>{ ajusteZoomMini(); clampVue(); });
+ajusteZoomMini();
+clampVue();
+
 const cnv = L.canvas({padding:.4});
 /* Tuiles haute densité seulement si le réseau et l’appareil suivent */
 const HD = (IS_WEBVIEW || SLOW_NET || DEV_MEM<=3) ? "" : "{r}";
 const BASES = {
+  /* `maxNativeZoom` est la profondeur réellement servie par la source ;
+     `maxZoom` autorise un cran de plus, où la dernière tuile est agrandie. On
+     peut donc continuer d'approcher au lieu de heurter un mur, et une couche
+     dont la source s'arrête plus tôt n'affiche plus de trou. */
   light: L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}"+HD+".png",
-    {attribution:"© OpenStreetMap © CARTO", subdomains:"abcd", maxZoom:19, updateWhenIdle:true, keepBuffer:1, crossOrigin:true}),
+    {attribution:"© OpenStreetMap © CARTO", subdomains:"abcd", maxNativeZoom:19, maxZoom:20,
+     updateWhenIdle:true, keepBuffer:1, crossOrigin:true}),
   dark: L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}"+HD+".png",
-    {attribution:"© OpenStreetMap © CARTO", subdomains:"abcd", maxZoom:19, updateWhenIdle:true, keepBuffer:1, crossOrigin:true}),
+    {attribution:"© OpenStreetMap © CARTO", subdomains:"abcd", maxNativeZoom:19, maxZoom:20,
+     updateWhenIdle:true, keepBuffer:1, crossOrigin:true}),
+  /* Imagerie Esri : vérifié, elle sert bien le zoom 19 avec de vraies images
+     (11 à 17 ko par tuile en zone rurale), soit le niveau du bâtiment. */
   sat: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    {attribution:"© Esri, Maxar, Earthstar Geographics", maxZoom:19, updateWhenIdle:true, keepBuffer:2})
+    {attribution:"© Esri, Maxar, Earthstar Geographics", maxNativeZoom:19, maxZoom:20,
+     updateWhenIdle:true, keepBuffer:2})
 };
 let baseCur = "light";
 /* Une tuile qui échoue (réseau mobile instable) est redemandée une fois */
