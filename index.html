@@ -152,8 +152,9 @@ header{display:flex;align-items:center;gap:8px;padding:0 10px;height:46px;
 .hint{font-size:11.5px;color:var(--t3);line-height:1.5;margin:8px 2px 0}
 
 /* Bouton discret, en tête de section */
-.btnq{display:inline-flex;align-items:center;gap:5px;background:transparent;
-  border:1px solid var(--bd2);color:var(--t2);border-radius:5px;padding:4px 8px;
+/* Hauteur minimale de 30 px : au doigt, un bouton de 24 px se rate. */
+.btnq{display:inline-flex;align-items:center;justify-content:center;gap:5px;background:transparent;
+  border:1px solid var(--bd2);color:var(--t2);border-radius:5px;padding:0 10px;min-height:30px;
   font:600 10.5px/1 system-ui,sans-serif;cursor:pointer;margin-top:6px}
 .btnq:hover{background:var(--sf3);color:var(--t1);border-color:var(--acc-bd)}
 .btnq:active{background:var(--sf4)}
@@ -2516,11 +2517,44 @@ async function loadQuakes(){
     })).filter(f=>f.properties.mag>=4.5)};
   }
   if(!data) data = await fetchJSON(url, null, 180000);
+  qRaw=data.features||[];
+  drawQuakes();
+}
+
+/* ---------- Dessin des séismes : détail progressif et champ de vision ----------
+   Même principe que pour les feux. Jusqu'à 2 500 séismes étaient tracés d'un
+   coup, sur toute la planète, quel que soit le zoom : à l'échelle du globe cela
+   donne un semis de points illisible où un M7 se perd au milieu de centaines de
+   M2,5 sans conséquence. On montre donc les plus forts d'abord, et le détail
+   n'arrive qu'en approchant. */
+let qRaw=[];
+function quakeMinMag(z){
+  if(z<3)   return 5.5;   /* vue mondiale : seuls les séismes marquants */
+  if(z<4.5) return 4.8;
+  if(z<6)   return 4.0;
+  if(z<8)   return 3.0;
+  return 0;               /* de près : tout ce que la source a fourni */
+}
+function drawQuakes(){
   layers.quakes.clearLayers();
-  let n=0;
-  const feats=(data.features||[]).slice(0,PERF.quakeCap);
+  if(!qRaw.length){ setC("c-quakes",0); return; }
+  const z=map.getZoom(), minM=quakeMinMag(z);
+  const b=map.getBounds().pad(0.3);
+  let n=0, masques=0;
+  const feats=qRaw
+    .filter(f=>{
+      const m=f.properties&&f.properties.mag;
+      if(m==null) return false;
+      if(m<minM){ masques++; return false; }
+      const c=f.geometry&&f.geometry.coordinates;
+      if(!c) return false;
+      if(c[1]<b.getSouth()||c[1]>b.getNorth()||c[0]<b.getWest()||c[0]>b.getEast()){ masques++; return false; }
+      return true;
+    })
+    .sort((a,b2)=>b2.properties.mag-a.properties.mag)   /* les plus forts au-dessus */
+    .slice(0,PERF.quakeCap);
   for(const f of feats){
-    const m=f.properties.mag; if(m==null) continue;
+    const m=f.properties.mag;
     const [lon,lat,depth]=f.geometry.coordinates;
     const [col,txt]=magInfo(m);
     L.circleMarker([lat,lon],{renderer:cnv,radius:Math.max(4,(m-1.8)*3),color:col,weight:2,opacity:.95,fillColor:col,fillOpacity:.5})
@@ -2534,7 +2568,10 @@ async function loadQuakes(){
       .addTo(layers.quakes);
     n++;
   }
-  setC("c-quakes",n); setC("ch-quakes",n);
+  /* Le compteur dit ce qui est montré ET ce qui est masqué, avec le seuil en
+     vigueur : sinon on croit que la carte a perdu des données. */
+  setC("c-quakes", n + (masques ? (minM ? " · M≥"+minM.toFixed(1) : " / "+(n+masques)) : ""));
+  setC("ch-quakes", n);
 }
 
 /* ================= Périmètres brûlés officiels (USA) ================= */
@@ -2570,6 +2607,7 @@ async function loadPerims(){
 }
 
 /* ================= Alertes officielles : GDACS + NWS ================= */
+let alertT=0;
 async function loadAlerts(){
   layers.alerts.clearLayers();
   let n=0;
@@ -2593,12 +2631,22 @@ async function loadAlerts(){
       setC("c-alerts","indispo");
     } else {
       const age=pre.t?Math.round((Date.now()-pre.t)/60000):null;
+      /* Détail progressif, comme pour les feux et les séismes. En vue large on
+         ne montre que les alertes OFFICIELLEMENT graves : sur 341 alertes, 329
+         sont de niveau vert, c'est-à-dire sans portée humanitaire. Les afficher
+         toutes à l'échelle du globe recouvrait la carte de points pour des
+         événements qui n'en sont pas. Le vert apparaît en approchant. */
+      const zA=map.getZoom(), vertsVisibles=zA>=4;
+      const bA=map.getBounds().pad(0.35);
       for(const x of pre.f){
         const lat=x.c[0], lon=x.c[1];
         if(!inBbox(lat,lon)) continue;
-        const [lvl,col]=GLVL[x.a]||["","#8fa4cc"];
         const grave = x.a==="Red" || x.a==="Orange";
         if(x.a==="Red") nRouge++; else if(x.a==="Orange") nOrange++;
+        if(!grave && !vertsVisibles) continue;
+        /* Hors du champ de vision : rien à dessiner. */
+        if(lat<bA.getSouth()||lat>bA.getNorth()||lon<bA.getWest()||lon>bA.getEast()) continue;
+        const [lvl,col]=GLVL[x.a]||["","#8fa4cc"];
 
         /* Emprise réelle de l'alerte, publiée par GDACS. On ne la trace que pour
            les niveaux rouge et orange : sur 341 alertes dont 329 vertes, dessiner
@@ -2850,8 +2898,15 @@ async function loadCities(force){
     if(!pts.length){ setC("c-cities","–"); return; }
     pts.sort((a,c)=>c.r-a.r);
     pts=pts.slice(0,tier.max);
+    /* DÉCOUPLAGE : les NOMS de lieux viennent de Photon, la température
+       d'Open-Meteo. Les deux étaient liés — si l'enrichissement météo échouait,
+       la liste entière était jetée et la couche des lieux disparaissait, alors
+       que les noms étaient là et parfaitement utilisables. Cela emportait aussi
+       le croisement des localités concernées par un incendie, qui n'a pas besoin
+       de la moindre température pour fonctionner.
+       On garde donc les lieux dans tous les cas ; la température est un bonus. */
     const data=await wxBatch(pts);
-    if(data.length) placesData=data;
+    placesData = data.length ? data : pts;
     renderPlaces();
   }catch(e){ setC("c-cities","–"); placesKey=""; }
 }
@@ -2877,8 +2932,11 @@ function renderPlaces(){
   for(const p of placesData){
     const q=map.latLngToContainerPoint([p.la,p.lo]);
     if(q.x<-60||q.y<-30||q.x>sz.x+60||q.y>sz.y+30) continue;
-    const c0=p.c;
-    const w=labelWidth(p.n, Math.round(c0.temperature_2m)+"°", Math.round(c0.wind_speed_10m)), h=13;
+    /* La température peut manquer (plafond météo atteint) : le nom du lieu
+       s'affiche quand même, seul. Auparavant l'absence de `p.c` faisait échouer
+       tout le rendu de la couche. */
+    const c0=p.c||null;
+    const w=labelWidth(p.n, c0?Math.round(c0.temperature_2m)+"°":"", c0?Math.round(c0.wind_speed_10m):""), h=13;
     let clash=false;
     for(const o of placed){
       if(Math.abs(o.x-q.x)<(o.w+w)/2+PAD && Math.abs(o.y-q.y)<h+PAD-1){ clash=true; break; }
@@ -2886,10 +2944,17 @@ function renderPlaces(){
     if(clash) continue;
     if(placed.length>=LIM) break;
     placed.push({x:q.x,y:q.y,w:w});
-    const c=p.c, rot=Math.round((c.wind_direction_10m+90)%360);
+    /* Étiquette complète si la météo est là, nom seul sinon. Un lieu sans
+       température reste une information utile — et cliquable. */
+    const c=c0;
+    const corps = c
+      ? `<span class="nm">${esc(p.n)}</span><b>${fmtTs(c.temperature_2m)}</b>`
+        + `<span class="arr" style="transform:rotate(${Math.round((c.wind_direction_10m+90)%360)}deg)">${mic("arrow")}</span>`
+        + `${fmtVs(c.wind_speed_10m)}`
+      : `<span class="nm">${esc(p.n)}</span>`;
     L.marker([p.la,p.lo],{interactive:true, zIndexOffset:-500,
       icon:L.divIcon({className:"", iconSize:[w,13], iconAnchor:[w/2,-4],
-        html:`<div class="plabel"><span class="nm">${esc(p.n)}</span><b>${fmtTs(c.temperature_2m)}</b><span class="arr" style="transform:rotate(${rot}deg)">${mic("arrow")}</span>${fmtVs(c.wind_speed_10m)}</div>`})})
+        html:`<div class="plabel">${corps}</div>`})})
       .on("click",()=>showWeather(p.la,p.lo,p.n)).addTo(layers.cities);
   }
   setC("c-cities",placed.length);
@@ -3106,7 +3171,8 @@ map.on("moveend zoomend",()=>{
      instantané malgré le masquage de tout ce qui est hors écran — sans cela,
      une zone découverte en glissant resterait vide jusqu'au prochain appel
      réseau, une seconde plus tard. */
-  drawHotspots(); drawComplexes();
+  drawHotspots(); drawComplexes(); drawQuakes();
+  clearTimeout(alertT); alertT=setTimeout(loadAlerts, 250);
   /* Les appels réseau, eux, restent différés et regroupés. */
   clearTimeout(hotT); hotT=setTimeout(loadHotspots,1000);
   clearTimeout(ebT);  ebT=setTimeout(loadEuba,2200);
@@ -3298,7 +3364,70 @@ function analyseComplex(g){
   const fresh=Math.min(...g.map(p=>p.hrs));
   const st=fireState(fresh, trend);
   return {n, frp, hull, area, burned, t0, t1, vec, c:[cLa,cLo], fresh, trend,
-          st, state:st.label, stateCol:st.col};
+          st, state:st.label, stateCol:st.col, pts:g};
+}
+
+/* ============================================================
+   LOCALITÉS CONCERNÉES
+   ------------------------------------------------------------
+   Demande du propriétaire : savoir quels villages ont réellement été touchés,
+   et lesquels sont encore menacés. À dire d'emblée, et c'est écrit dans la
+   fiche : ceci est un CROISEMENT CALCULÉ entre les empreintes satellites et la
+   couche des lieux, pas un bilan officiel. Aucun flux ouvert ne diffuse
+   d'évaluation de dégâts en temps réel — Copernicus EMS en produit, sur
+   activation, sans interface temps réel. Annoncer « village détruit » sur la
+   base d'un croisement serait indéfendable ; on dit donc « le feu est passé à
+   moins de X mètres », ce qui est exactement ce qui a été mesuré.
+
+   Deux catégories :
+     atteinte  une détection thermique à moins de 1,5 km du lieu
+     menacée   le lieu est dans l'axe de progression, et le feu est encore actif
+   ============================================================ */
+function localitesConcernees(c){
+  if(!placesData.length) return null;
+  const mort=(FIRE_BUCKET[c.st.key]||{}).k==="zombie";
+  const atteintes=[], menacees=[];
+  for(const p of placesData){
+    /* Distance au foyer le plus proche du sinistre. On s'arrête dès qu'un foyer
+       est assez près : inutile de parcourir les milliers de points restants. */
+    let dmin=Infinity;
+    for(const h of c.pts){
+      const d=distKm([p.la,p.lo],[h.la,h.lo]);
+      if(d<dmin){ dmin=d; if(dmin<0.4) break; }
+    }
+    if(dmin<=1.5){ atteintes.push({n:p.n, d:dmin}); continue; }
+    /* Menace : seulement si le feu progresse encore, et seulement dans son axe. */
+    if(!mort && c.vec && dmin<=25){
+      const brg=bearing(c.vec.from,[p.la,p.lo]);
+      let off=Math.abs(((brg-c.vec.brg+540)%360)-180);
+      if(off<=40) menacees.push({n:p.n, d:dmin, off:Math.round(off)});
+    }
+  }
+  atteintes.sort((a,b)=>a.d-b.d);
+  menacees.sort((a,b)=>a.d-b.d);
+  if(!atteintes.length && !menacees.length) return null;
+  return {atteintes, menacees};
+}
+function localitesHTML(c){
+  const L=localitesConcernees(c);
+  if(!L) return "";
+  const ligne=x=>`<b>${esc(x.n)}</b> <span style="color:#8fa4cc">${x.d<1?Math.round(x.d*1000)+" m":x.d.toFixed(1)+" km"}</span>`;
+  let h=`<div class="nw-s">Localités concernées</div>`;
+  if(L.atteintes.length){
+    h+=`<div class="pp-row"><span style="color:#ff6d00;font-weight:600">Le feu est passé à leur contact</span><br>`
+     + L.atteintes.slice(0,8).map(ligne).join(" · ")
+     + (L.atteintes.length>8?` <span style="color:#8fa4cc">et ${L.atteintes.length-8} autre${L.atteintes.length-8>1?"s":""}</span>`:"")
+     + `</div>`;
+  }
+  if(L.menacees.length){
+    h+=`<div class="pp-row"><span style="color:#ffc46b;font-weight:600">Dans l’axe de progression</span><br>`
+     + L.menacees.slice(0,6).map(x=>ligne(x)+` <span style="color:#8fa4cc">(${x.off}° de l’axe)</span>`).join(" · ")
+     + `</div>`;
+  }
+  h+=`<div class="pp-row" style="color:#8fa4cc;font-size:11px">Croisement calculé entre les détections satellites et les lieux chargés à l’écran. `
+   + `Ce n’est <b>pas</b> un bilan officiel : aucun service public ne diffuse d’évaluation de dégâts en temps réel. `
+   + `Une distance faible signifie que le feu est passé près, pas que la localité a été détruite.</div>`;
+  return h;
 }
 function drawComplexes(){
   layers.complexes.clearLayers();
@@ -3350,6 +3479,7 @@ function drawComplexes(){
       <div class="pp-row">Puissance totale : <b>${c.frp.toFixed(0)} MW</b>${c.frp>1000?" — sinistre majeur":c.frp>300?" — feu important":""}</div>
       <div class="pp-row">Activité du <b>${fmtShort(c.t0)}</b> au <b>${fmtShort(c.t1)}</b></div>
       ${vecTxt||'<div class="pp-row">Propagation non mesurable (foyer trop récent ou stationnaire)</div>'}
+      ${localitesHTML(c)}
       <a class="pp-link" href="#" onclick="fireAnalysis(${c.c[0]},${c.c[1]},'Incendie',${c.t0},${c.t1});return false">${ic("projection","x14")}Prévoir la propagation (météo et règle des 30)</a><br>
       <a class="pp-link" href="#" onclick="showNews(${c.c[0]},${c.c[1]},'fire','Incendie — actualités');return false">${ic("news","x14")}Actualités : évacuations, bilans, moyens engagés</a>
       <div class="pp-warn">Surface et direction calculées à partir des détections satellites réelles. Ce n’est pas un relevé de terrain : les pompiers font foi.</div>`;
@@ -5729,6 +5859,46 @@ $("#lay").addEventListener("change", syncUI);
 map.on("moveend", syncUI);
 setInterval(syncUI, 10000);
 
+/* ---------- Autonomie : éteindre ce qui n'a rien à montrer ----------
+   Demande explicite du propriétaire : « s'il n'y a pas de catastrophe de ce
+   type, tu décoches la case ». Une couche cochée dont le compteur reste à zéro
+   fait croire qu'on surveille quelque chose qui n'existe pas, et elle continue
+   de consommer du réseau à chaque cycle.
+
+   Trois garde-fous, parce que décocher à la place de l'utilisateur est une
+   décision forte :
+   · une seule fois par session, au démarrage — jamais pendant qu'il navigue ;
+   · uniquement les couches d'ÉVÉNEMENTS, jamais les couches de contexte
+     (températures, vent, fond) qui n'ont pas de notion de « zéro » ;
+   · uniquement si le compteur est un vrai zéro, pas un « – » qui signifie
+     « pas encore chargé » ou une mention de portée géographique.
+   Un mot est dit à l'utilisateur : sans cela, il croirait à un bug. */
+const AUTO_OFF=["tg-storms","tg-volcanoes","tg-other","tg-ice","tg-threat","tg-perims","tg-euba"];
+let autoOffFait=false;
+function autoOffVides(){
+  if(autoOffFait) return;
+  autoOffFait=true;
+  const eteintes=[];
+  for(const id of AUTO_OFF){
+    const l=LAYER_BY_ID.get(id), cb=document.getElementById(id);
+    if(!l||!cb||!cb.checked) continue;
+    const src=document.getElementById(l.cnt);
+    const v=src?src.textContent.trim():"";
+    if(v!=="0") continue;               /* « – », « zoom+ », « hors zone » : on ne touche pas */
+    cb.checked=false;
+    cb.dispatchEvent(new Event("change",{bubbles:true}));
+    eteintes.push(l.nm);
+  }
+  if(eteintes.length){
+    syncUI();
+    toast(`<span class="tmsg">${ic("check","x16")}${eteintes.length} couche${eteintes.length>1?"s":""} sans aucun événement `
+      + `en ce moment : ${esc(eteintes.join(", "))}. Éteinte${eteintes.length>1?"s":""} pour alléger la carte — `
+      + `rallumez-la${eteintes.length>1?"s":""} quand vous voulez.</span>`, 9000);
+    if(window.__diagPush) window.__diagPush("INFO",
+      "Couches sans evenement eteintes automatiquement : "+eteintes.join(", "));
+  }
+}
+
 /* ============ Panneau latéral ============ */
 const panel=$("#panel");
 function openPanel(v){
@@ -5801,8 +5971,17 @@ function applyCountry(code, silent){
     $("#target").innerHTML="Vue mondiale. Ciblez une zone pour en charger le détail complet.";
     map.setView([22,8], mqMobile.matches?2:2.5);
   }else{
-    state.bbox=c.b; state.cc=code;
-    $("#target").innerHTML=`Zone ciblée : <b>${esc(c.n)}</b>. Feux, séismes et alertes sont filtrés sur cette emprise.`;
+    /* LE CIBLAGE PAR ZONE N'EST PLUS UN FILTRE DE DONNÉES.
+       Demande explicite du propriétaire : « ça va être la caméra qui va cibler,
+       donc le système de ciblage par zone, ça sert à rien ». Il a raison — depuis
+       que chaque couche ne dessine que ce qui est dans le champ de vision et
+       n'affiche le détail qu'en approchant, un second filtre par pays ne fait
+       que créer des incohérences : on pouvait regarder l'Italie avec la France
+       « ciblée » et ne rien voir.
+       Le sélecteur devient donc un simple RACCOURCI DE CAMÉRA : il déplace la
+       vue, et c'est la vue qui décide de tout le reste. */
+    state.bbox=null; state.cc=code;
+    $("#target").innerHTML=`Vue centrée sur <b>${esc(c.n)}</b>. L’affichage suit la caméra : tout ce qui est à l’écran est chargé, et le détail augmente à mesure que vous approchez.`;
     map.fitBounds([[c.b[1],c.b[0]],[c.b[3],c.b[2]]], {padding:[16,16]});
   }
   hotKey=""; hotBox=null; ebKey=""; ebBox=null; aqKey=""; aqBox=null;
@@ -6186,6 +6365,9 @@ premierChargement.then(()=>{
     if($("#tg-flood").checked) loadFlood();
     if($("#tg-fwi").checked) initFWI();
     loadForecastGrid(true);
+    /* Une fois tout chargé et les compteurs renseignés, on éteint ce qui n'a
+       rien à montrer. Le délai laisse aux dernières couches le temps d'aboutir. */
+    setTimeout(autoOffVides, 6000);
   });
 });
 setTimeout(hideLoader,9000);
