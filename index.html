@@ -7673,10 +7673,22 @@ async function ouvreGlobe(){
        Douze secondes suffisent très largement, même sur un réseau lent : au-delà,
        on referme et on le dit. Cela couvre aussi le cas d'un onglet qui ne
        compose aucune image (fenêtre masquée), où le moteur ne rend jamais. */
-    glVeille=setTimeout(()=>{
+    glVeille=setTimeout(function veille(){
       if(!glOuvert || !glMap) return;
       let charge=false; try{ charge=glMap.isStyleLoaded(); }catch(_){}
       if(charge) return;
+      /* ONGLET EN ARRIÈRE-PLAN : ce n'est PAS une panne. Le navigateur suspend
+         requestAnimationFrame sur une page masquée, et c'est lui qui anime le
+         rendu de MapLibre — le style ne peut donc pas aboutir tant qu'on ne
+         regarde pas. Observé de première main : sur une page masquée, le compteur
+         d'images tombe à zéro et le style reste indéfiniment « non chargé ».
+         Refermer en annonçant « la vue n'a pas pu s'initialiser » serait faux :
+         il suffit de revenir à l'onglet. On repousse donc l'échéance au lieu de
+         conclure. */
+      if(document.visibilityState==="hidden"){
+        glVeille=setTimeout(veille, 12000);
+        return;
+      }
       fermeGlobe();
       toast(`<span class="tmsg">${ic("warning","x16")}La vue planète n’a pas pu s’initialiser (accélération 3D indisponible ou onglet en arrière-plan). La carte reste entièrement utilisable.</span>`, 7000);
       if(window.__diagPush) window.__diagPush("ALERTE","Vue planete : style non charge apres 12 s, fermeture.");
