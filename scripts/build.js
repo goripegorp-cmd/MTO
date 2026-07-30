@@ -113,23 +113,81 @@ async function eonet() {
   write("eonet.json", { t: now, events }, events.length + " événements (90 j)");
 }
 
-/* ---------- Alertes ONU / Commission européenne (GDACS) ----------
-   Ce serveur met parfois dix-huit secondes à répondre : le sortir du chemin du
-   visiteur est le gain le plus visible de tout le pré-calcul. */
+/* ---------- Alertes officielles ONU / Commission européenne (GDACS) ----------
+   L'API JSON de GDACS est hors service : `geteventlist/MAP` n'a jamais répondu
+   en cent secondes lors des essais, et `geteventlist/SEARCH` renvoie 503. Cela
+   expliquait le « délai dépassé » constaté aussi bien dans le navigateur des
+   visiteurs que dans ce robot — donc l'absence totale d'alertes officielles.
+
+   Le flux RSS officiel, lui, répond en une seconde environ pour un mégaoctet.
+   On l'utilise désormais. Il est plus riche que l'API : il porte l'emprise
+   (bbox) et le lien vers l'alerte CAP normalisée.
+
+   Analyse par expression régulière et non par vrai analyseur XML : ce flux est
+   produit par une machine, sa forme est stable, et le script ne doit dépendre
+   d'aucun paquet externe. */
+function xmlUnescape(s) {
+  return String(s)
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&").trim();
+}
+function xmlTag(block, name) {
+  const m = block.match(new RegExp("<" + name + "(?:\\s[^>]*)?>([\\s\\S]*?)</" + name + ">"));
+  return m ? xmlUnescape(m[1]) : "";
+}
+
 async function gdacs() {
-  const d = await get("https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP", 90000);
-  const f = (d.features || []).filter(x => x.geometry && x.geometry.type === "Point").map(x => {
-    const p = x.properties || {};
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 60000);
+  let xml;
+  try {
+    const r = await fetch("https://www.gdacs.org/xml/rss.xml",
+      { signal: ctl.signal, headers: { "User-Agent": UA } });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    xml = await r.text();
+  } finally { clearTimeout(t); }
+
+  const items = xml.split("<item>").slice(1).map(s => s.split("</item>")[0]);
+  const f = items.map(it => {
+    const lat = parseFloat(xmlTag(it, "geo:lat"));
+    const lon = parseFloat(xmlTag(it, "geo:long"));
+    if (!isFinite(lat) || !isFinite(lon)) return null;
+    /* bbox GDACS : « lonMin lonMax latMin latMax ». On la republie dans l'ordre
+       attendu côté carte (ouest, sud, est, nord) pour délimiter l'emprise. */
+    const bb = xmlTag(it, "gdacs:bbox").split(/\s+/).map(Number);
+    const box = bb.length === 4 && bb.every(isFinite)
+      ? [p3(bb[0]), p3(bb[2]), p3(bb[1]), p3(bb[3])] : null;
     return {
-      t: p.eventtype, a: p.alertlevel, co: p.country || "",
-      n: p.name || p.eventname || p.description || "",
-      s: (p.severitydata && p.severitydata.severitytext) || "",
-      d: p.fromdate || "",
-      u: (p.url && (p.url.report || p.url.details)) || "",
-      c: [p3(x.geometry.coordinates[1]), p3(x.geometry.coordinates[0])]
+      t: xmlTag(it, "gdacs:eventtype"),
+      a: xmlTag(it, "gdacs:alertlevel"),
+      co: xmlTag(it, "gdacs:country"),
+      /* Attention au piège : `gdacs:title` vaut « Event in rss format » et
+         `gdacs:description` « Joint Research Center of the European Commission ».
+         Ce sont des remplissages. L'information réelle est dans les balises RSS
+         standard `title` (type, magnitude, lieu, heure) et `description`
+         (phrase descriptive complète). */
+      n: xmlTag(it, "title"),
+      s: xmlTag(it, "description"),
+      d: xmlTag(it, "gdacs:fromdate"),
+      u: xmlTag(it, "link"),
+      cap: xmlTag(it, "gdacs:cap") || "",
+      id: xmlTag(it, "gdacs:eventid"),
+      cur: xmlTag(it, "gdacs:iscurrent") === "true",
+      sc: parseFloat(xmlTag(it, "gdacs:alertscore")) || 0,
+      bb: box,
+      c: [p3(lat), p3(lon)]
     };
-  }).sort(byKey(x => x.t + "|" + x.d + "|" + x.n + "|" + x.c.join(",")));
-  write("gdacs.json", { t: now, f }, f.length + " alertes");
+  }).filter(Boolean)
+    /* Les plus graves d'abord : la carte n'aura jamais à trier elle-même pour
+       décider quoi dessiner en dernier, donc au-dessus. */
+    .sort(byKey(x => ({ Red: 0, Orange: 1, Green: 2 }[x.a] ?? 3) + "|" + x.t + "|" + x.id));
+
+  const rouge = f.filter(x => x.a === "Red").length;
+  const orange = f.filter(x => x.a === "Orange").length;
+  write("gdacs.json", { t: now, f },
+    f.length + " alertes (" + rouge + " rouges, " + orange + " orange, " + (f.length - rouge - orange) + " vertes)");
 }
 
 /* ---------- Vigilances des météorologues d'État (NWS, États-Unis) ---------- */

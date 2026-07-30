@@ -2494,34 +2494,67 @@ async function loadPerims(){
 async function loadAlerts(){
   layers.alerts.clearLayers();
   let n=0;
+  /* ---------- GDACS : la seule source d'alertes CERTIFIÉES au monde ----------
+     Aucune tentative en direct. Le domaine gdacs.org n'autorise pas les
+     requêtes croisées : depuis un navigateur, ni l'API JSON ni le flux RSS ne
+     sont accessibles — vérifié, les deux répondent « Failed to fetch ». L'appel
+     de repli était donc voué à l'échec par construction, et c'est lui qui
+     consommait un délai de 38 secondes avant d'écrire « délai dépassé » dans le
+     journal à chaque chargement. Seul le fichier pré-calculé par le robot peut
+     porter ces alertes.
+
+     Tolérance d'âge portée à douze heures : c'est la seule source officielle, et
+     mieux vaut une alerte datée affichée avec son âge que pas d'alerte du tout. */
+  let nRouge=0, nOrange=0;
   try{
-    let g=null;
-    const pre=await preload("gdacs", 7200000);
-    if(pre && pre.f) g={features: pre.f.map(x=>({
-      geometry:{type:"Point", coordinates:[x.c[1], x.c[0]]},
-      properties:{eventtype:x.t, alertlevel:x.a, country:x.co, name:x.n,
-                  severitydata:{severitytext:x.s}, fromdate:x.d, url:{report:x.u}}
-    }))};
-    if(!g) g = await fetchJSON("https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP", null, 900000, 38000);
-    for(const f of (g.features||[])){
-      if(!f.geometry || f.geometry.type!=="Point") continue;
-      const [lon,lat]=f.geometry.coordinates;
-      if(!inBbox(lat,lon)) continue;
-      const p=f.properties||{};
-      const [lvl,col]=GLVL[p.alertlevel]||["","#8fa4cc"];
-      const link = p.url && (p.url.report||p.url.details);
-      const sev = p.severitydata && p.severitydata.severitytext;
-      L.circleMarker([lat,lon],{renderer:cnv,radius:9,color:col,weight:3,fillColor:"#0d1830",fillOpacity:.9})
-        .bindPopup(`<div class="pp-t">${ic("siren","x18")}Alerte ${lvl} — ${esc(GTYPE[p.eventtype]||p.eventtype||"Événement")}</div>
-          <div class="pp-cat">${esc(p.country||"")}</div>
-          <div class="pp-row"><b>${esc(p.name||p.eventname||p.description||"")}</b></div>
-          ${sev?`<div class="pp-row">${esc(sev)}</div>`:""}
-          ${p.fromdate?`<div class="pp-row">Depuis le <b>${fmtDate(p.fromdate)}</b></div>`:""}
-          <div class="pp-desc">Niveau d’alerte officiel gradué selon l’impact humanitaire estimé.</div>
-          ${link?`<a class="pp-link" href="${esc(link)}" target="_blank" rel="noopener">Bulletin officiel GDACS (ONU et Commission européenne)${ic("external","x12 xl")}</a>`:""}
-          <div class="pp-foot">Source : GDACS — ONU & Commission européenne</div>`,{maxWidth:300})
-        .addTo(layers.alerts);
-      n++;
+    const pre=await preload("gdacs", 12*3600e3);
+    if(!pre || !pre.f){
+      if(window.__diagPush) window.__diagPush("ALERTE",
+        "Alertes officielles GDACS indisponibles : le fichier pre-calcule manque ou depasse 12 h. Le domaine gdacs.org interdit l'acces direct depuis un navigateur, il n'y a pas de repli possible.");
+      setC("c-alerts","indispo");
+    } else {
+      const age=pre.t?Math.round((Date.now()-pre.t)/60000):null;
+      for(const x of pre.f){
+        const lat=x.c[0], lon=x.c[1];
+        if(!inBbox(lat,lon)) continue;
+        const [lvl,col]=GLVL[x.a]||["","#8fa4cc"];
+        const grave = x.a==="Red" || x.a==="Orange";
+        if(x.a==="Red") nRouge++; else if(x.a==="Orange") nOrange++;
+
+        /* Emprise réelle de l'alerte, publiée par GDACS. On ne la trace que pour
+           les niveaux rouge et orange : sur 341 alertes dont 329 vertes, dessiner
+           toutes les emprises reviendrait à recouvrir la carte de rectangles pour
+           des événements sans portée. */
+        if(grave && x.bb){
+          const [w,s0,e,nn]=x.bb;
+          if(Math.abs(e-w)<170){
+            L.rectangle([[s0,w],[nn,e]],{renderer:cnv,color:col,weight:1.4,
+              dashArray:"7 5",fillColor:col,fillOpacity:.06,interactive:false}).addTo(layers.alerts);
+          }
+        }
+
+        /* Une alerte verte est une information, pas une alerte : petit point sourd.
+           Rouge et orange sont dessinées franchement, elles doivent sauter aux yeux. */
+        L.circleMarker([lat,lon],{renderer:cnv,
+          radius: x.a==="Red"?11:x.a==="Orange"?9:4.5,
+          color:col, weight: grave?3:1.5,
+          fillColor:"#0d1830", fillOpacity: grave?.92:.55})
+          .bindPopup(`<div class="pp-t" style="color:${col}">${ic("siren","x18")}${esc(GTYPE[x.t]||x.t||"Événement")}</div>
+            <div class="stbadge" style="--c:${col}">ALERTE ${lvl.toUpperCase()}${x.sc?" · score "+x.sc.toFixed(1):""}</div>
+            <div class="pp-cat">${esc(x.co||"")}</div>
+            <div class="pp-row"><b>${esc(x.n||"")}</b></div>
+            ${x.s&&x.s!==x.n?`<div class="pp-row" style="color:#b9c8e8">${esc(x.s)}</div>`:""}
+            ${x.d?`<div class="pp-row">Depuis le <b>${fmtDate(x.d)}</b>${x.cur?"":" · <span style=\"color:#8fa4cc\">événement clos</span>"}</div>`:""}
+            <div class="pp-row" style="color:#8fa4cc;font-size:11.5px">${grave
+              ? "Alerte <b>officielle</b> graduée par l’ONU et la Commission européenne selon l’impact humanitaire estimé. C’est une catastrophe confirmée."
+              : "Niveau <b>vert</b> : événement détecté et publié, mais dont l’impact humanitaire estimé reste faible. Information, pas alerte."}</div>
+            ${x.u?`<a class="pp-link" href="${esc(x.u)}" target="_blank" rel="noopener">Rapport officiel GDACS${ic("external","x12 xl")}</a><br>`:""}
+            ${x.cap?`<a class="pp-link" href="${esc(x.cap)}" target="_blank" rel="noopener">Alerte normalisée CAP${ic("external","x12 xl")}</a>`:""}
+            <div class="pp-foot">GDACS — ONU et Commission européenne${age!=null?` · relevé il y a ${age} min`:""}</div>`,
+            {maxWidth:mqMobile.matches?262:312})
+          .addTo(layers.alerts);
+        n++;
+      }
     }
   }catch(e){}
   if(!state.bbox || state.cc==="us"){
@@ -2547,7 +2580,15 @@ async function loadAlerts(){
       }
     }catch(e){}
   }
-  setC("c-alerts", n||"0"); setC("ch-alerts", n||"0");
+  /* Le compteur annonce ce qui compte : les alertes RÉELLEMENT graves. Afficher
+     « 341 » laissait croire à trois cents catastrophes en cours, alors que 329
+     d'entre elles sont de niveau vert, c'est-à-dire sans portée humanitaire. */
+  const graves=nRouge+nOrange;
+  setC("c-alerts", graves ? (nRouge?nRouge+" rouge"+(nRouge>1?"s":""):"")
+                            + (nRouge&&nOrange?" · ":"")
+                            + (nOrange?nOrange+" orange":"")
+                          : (n?"0 grave · "+n+" info":"0"));
+  setC("ch-alerts", graves||"0");
 }
 
 /* ===== LIEUX : villes, villages et hameaux — source Photon (fiable, mondiale) ===== */
