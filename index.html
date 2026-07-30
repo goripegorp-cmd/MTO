@@ -673,7 +673,9 @@ body.base-light #fresh b{color:#0d1f38}
 @media (min-width:900px){#tl{left:auto;right:14px;width:420px;bottom:14px}}
 #toast{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);
   background:rgba(13,24,46,.96);border:1px solid var(--line);border-radius:14px;
-  padding:10px 15px;font-size:12.5px;z-index:1250;max-width:90vw;text-align:center;
+  /* Au-dessus du globe (1350) : une notification émise pendant que la planète
+     est ouverte doit rester lisible. */
+  padding:10px 15px;font-size:12.5px;z-index:1360;max-width:90vw;text-align:center;
   box-shadow:0 10px 30px rgba(0,0,0,.5);transition:opacity .5s;pointer-events:none}
 #loader{position:absolute;inset:0;background:rgba(6,12,24,.88);z-index:1400;
   display:grid;place-items:center;transition:opacity .4s}
@@ -712,7 +714,17 @@ body.base-light .leaflet-control-scale-line{background:rgba(255,255,255,.8)!impo
    Superposition plein écran, masquée tant qu'on ne l'ouvre pas. Le moteur 3D et
    la moindre tuile ne sont demandés qu'à la première ouverture : fermée, cette
    vue ne coûte que quelques balises et ce bloc de style. */
-#globe{position:fixed;inset:0;z-index:1200;display:none;background:#03060e;
+/* z-index 1350 et non 1200. À 1200 la superposition passait SOUS l'entête
+   (1300), SOUS la bande d'onglets (1292), et à égalité avec le panneau latéral
+   (1200) qui vient plus loin dans le document — donc au-dessus. Conséquence
+   mesurée par elementFromPoint : les 84 px du haut, c'est-à-dire TOUTE la barre
+   de commandes du globe, étaient recouverts par de l'opaque, invisibles, et
+   leurs clics partaient dans les boutons de l'entête. Le panneau de 344 px
+   masquait en plus le tiers gauche de la planète.
+   1350 passe au-dessus de l'habillage, et reste SOUS #blocked et #loader (1400),
+   #welcome (1450) et le diagnostic (2000) — un état bloquant doit rester
+   prioritaire sur une vue d'agrément. */
+#globe{position:fixed;inset:0;z-index:1350;display:none;background:#03060e;
   contain:strict}
 #globe.on{display:block}
 /* Fond étoilé posé DERRIÈRE le canevas. Si le moteur peint un ciel opaque il le
@@ -7350,12 +7362,32 @@ const ML_CSS="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.css";
 const GL_ZOOM_PASSAGE = 7;      /* au-delà, la carte détaillée reprend la main */
 
 let glMap=null, glPret=null, glOuvert=false, glRaf=0, glDernierGeste=0, glRotation=true, glVeille=0;
+/* L'état des bascules vit ICI, pas dans l'attribut aria-pressed du bouton. La
+   carte est détruite et reconstruite à chaque ouverture : un état stocké dans le
+   DOM survivait à la carte qu'il décrivait, et se retrouvait donc à l'envers. */
+let glNuit=true, glRelief=false, glFocusAvant=null;
+
+/* Neutralise l'arrière-plan pendant que le dialogue plein écran est ouvert :
+   plus de tabulation ni de lecture d'écran dans une interface qu'on ne voit pas.
+   `inert` n'existe pas partout — l'absence de support ne doit rien casser. */
+function glInerte(on){
+  for(const n of [document.querySelector("header"), $("#groups"), $("#wrap")]){
+    if(!n) continue;
+    try{ n.inert = !!on; }catch(_){}
+    if(on) n.setAttribute("aria-hidden","true"); else n.removeAttribute("aria-hidden");
+  }
+}
 
 /* Le moteur 3D exige WebGL. Sans lui, on ne propose pas un bouton qui échoue. */
 const GL_DISPO = (()=>{ try{
   const c=document.createElement("canvas");
-  return !!(window.WebGLRenderingContext &&
-    (c.getContext("webgl2")||c.getContext("webgl")||c.getContext("experimental-webgl")));
+  const g=window.WebGLRenderingContext &&
+    (c.getContext("webgl2")||c.getContext("webgl")||c.getContext("experimental-webgl"));
+  /* Le contexte de TEST est rendu tout de suite. Un navigateur mobile n'en
+     accorde qu'une poignée : en garder un ouvert pour la seule question « le
+     3D est-il disponible ? » pouvait en priver la carte au moment voulu. */
+  if(g){ const e=g.getExtension("WEBGL_lose_context"); if(e) e.loseContext(); }
+  return !!g;
 }catch(e){ return false; } })();
 
 function chargeMapLibre(){
@@ -7407,6 +7439,16 @@ function polygoneNuit(){
   /* On referme sur le pôle plongé dans la nuit : celui opposé au Soleil. */
   const pole = dec>0 ? -90 : 90;
   pts.push([180, pole], [-180, pole], [pts[0][0], pts[0][1]]);
+  /* SENS DE PARCOURS NORMALISÉ. Tel quel, l'anneau s'enroule dans un sens en
+     été boréal et dans l'autre en hiver, puisque le pôle de fermeture change
+     d'hémisphère. La norme GeoJSON demande un contour extérieur en sens
+     antihoraire ; MapLibre ne s'en soucie pas pour un anneau unique, mais je
+     n'ai pas pu l'observer de mes yeux — et si je me trompais, le voile de nuit
+     peindrait le JOUR six mois par an. On normalise : ça ne coûte rien et ça
+     supprime la question. */
+  let aire=0;
+  for(let i=0;i<pts.length-1;i++) aire += pts[i][0]*pts[i+1][1] - pts[i+1][0]*pts[i][1];
+  if(aire < 0) pts.reverse();
   return {type:"FeatureCollection", features:[{type:"Feature", properties:{},
     geometry:{type:"Polygon", coordinates:[pts]}}]};
 }
@@ -7416,7 +7458,19 @@ function polygoneNuit(){
    n'est émise pour ouvrir le globe. */
 function glDonnees(){
   const f=[];
-  for(const c of (lastCx||[])){
+  /* PAS lastCx. Cette liste est filtrée par le cadre de vision de la carte 2D
+     et plafonnée à 40 : la reprendre telle quelle donnait une vue PLANÉTAIRE
+     qui ne montrait que les incendies de la région regardée juste avant, sans
+     le dire. Sur un globe, c'est un contresens. On recalcule donc l'ensemble
+     mondial, avec un plafond propre à la sphère.
+     Coût : le même travail que drawComplexes, et seulement quand le globe est
+     ouvert — soit une fois à l'ouverture puis une fois par minute. */
+  let mondial=[];
+  try{
+    mondial = buildComplexes(tlFilter(hotRaw)).map(analyseComplex)
+                .filter(c=>c.area>=0.4).sort((a,b)=>b.frp-a.frp).slice(0,150);
+  }catch(e){ mondial = lastCx||[]; }
+  for(const c of mondial){
     const bk=FIRE_BUCKET[c.st.key]||FIRE_BUCKET.stable;
     f.push({type:"Feature", properties:{
         g:"feu", col:bk.col, r: bk.k==="actif" ? Math.min(15, 4+Math.sqrt(c.burned*100)/7) : 4,
@@ -7498,7 +7552,10 @@ function glStyle(){
 function glFiche(p){
   const b=$("#gl-info"); if(!b) return;
   b.innerHTML = `<div class="gi-t"><span class="gi-d" style="background:${esc(p.col)}"></span>${esc(p.nm)}</div>`
-    + `<div>${p.d}</div>`
+    /* `d` est échappé comme `nm`. Les sources actuelles sont sûres, mais laisser
+       une seule interpolation non échappée dans du innerHTML est une porte qu'on
+       finit toujours par ouvrir. */
+    + `<div>${esc(p.d)}</div>`
     + `<span class="gi-a" data-go="${p.la},${p.lo}">Voir sur la carte détaillée</span>`;
   b.classList.add("on");
 }
@@ -7524,19 +7581,45 @@ async function ouvreGlobe(){
     toast(`<span class="tmsg">${ic("warning","x16")}Votre navigateur n’expose pas l’accélération 3D (WebGL). La vue planète ne peut pas s’afficher — la carte reste entièrement utilisable.</span>`, 7000);
     return;
   }
+  /* NON RÉENTRANTE. Sans ce verrou, un second clic pendant le téléchargement du
+     moteur relançait toute la fonction — et le bouton, qui teste `glOuvert`,
+     rouvrait au lieu de fermer. */
+  if(glOuvert) return;
   const box=$("#globe");
+  /* `glOuvert` est posé AVANT l'attente, pas après. La superposition plein écran
+     est opaque dès cette ligne : tant que le drapeau restait faux, le bouton
+     « Carte » et la touche Échap — tous deux gardés par `glOuvert` — étaient
+     inertes. Sur un réseau lent ou derrière un proxy qui avale la requête sans
+     répondre, l'utilisateur se retrouvait enfermé devant un écran noir, sans
+     autre issue qu'un rechargement de la page. */
+  glOuvert=true; glDernierGeste=Date.now();
   box.classList.add("on","load");
   box.setAttribute("aria-hidden","false");
   closeGroup();
+  /* Les deux bascules reprennent l'état qu'aura réellement le style neuf : la
+     carte est reconstruite de zéro à chaque ouverture, donc nuit visible et
+     relief éteint. Sans cette remise à plat, les boutons affichaient l'inverse
+     de la réalité et le clic suivant semblait sans effet. */
+  glNuit=true; glRelief=false;
+  const bn=$("#gl-night"); if(bn) bn.setAttribute("aria-pressed","true");
+  const br=$("#gl-relief"); if(br) br.setAttribute("aria-pressed","false");
+  /* Dialogue plein écran : l'arrière-plan doit sortir du parcours clavier et de
+     la lecture d'écran, sinon on tabule dans une interface invisible. */
+  glFocusAvant = document.activeElement;
+  glInerte(true);
+  const bc=$("#gl-close"); if(bc) bc.focus();
   let ml;
   try{ ml=await chargeMapLibre(); }
   catch(e){
-    box.classList.remove("on","load"); box.setAttribute("aria-hidden","true");
+    fermeGlobe();
     toast(`<span class="tmsg">${ic("warning","x16")}Le moteur 3D n’a pas pu être chargé (${esc(e.message||"réseau")}). La carte reste entièrement utilisable.</span>`, 7000);
     if(window.__diagPush) window.__diagPush("RÉSEAU","Moteur 3D indisponible : "+(e.message||""));
     return;
   }
-  glOuvert=true; glDernierGeste=Date.now();
+  /* Fermé pendant le téléchargement : on abandonne. Sans ce test, on
+     construirait une carte 3D dans une superposition déjà masquée — invisible,
+     jamais libérée, et qui continuerait de tourner. */
+  if(!glOuvert) return;
   const c=map.getCenter();
   /* On entre sur le globe là où la carte regardait, mais reculé : le propos de
      cette vue est l'ensemble, pas le détail. */
@@ -7572,9 +7655,13 @@ async function ouvreGlobe(){
          concurrentes qui divergeraient. */
       glMap.on("zoomend", ()=>{
         if(!glOuvert || glMap.getZoom() < GL_ZOOM_PASSAGE) return;
-        const k=glMap.getCenter(), z=Math.round(glMap.getZoom());
+        /* +1 : le zoom de MapLibre est défini sur des tuiles de 512 px, celui de
+           Leaflet sur des tuiles de 256. À échelle égale, Leaflet = MapLibre + 1.
+           Recopier le nombre tel quel faisait reculer d'un cran au moment précis
+           où l'on venait d'approcher — l'effet le plus déroutant possible. */
+        const k=glMap.getCenter(), z=Math.round(glMap.getZoom())+1;
         fermeGlobe();
-        map.setView([k.lat, k.lng], Math.max(GL_ZOOM_PASSAGE, Math.min(18, z)));
+        map.setView([k.lat, k.lng], Math.max(GL_ZOOM_PASSAGE+1, Math.min(19, z)));
         toast(`<span class="tmsg">${ic("map","x16")}La carte détaillée prend le relais à ce niveau de zoom.</span>`, 3600);
       });
       ["dragstart","zoomstart","rotatestart","pitchstart","mousedown","touchstart","wheel"]
@@ -7601,12 +7688,11 @@ async function ouvreGlobe(){
       if(/tile|abort|Failed to fetch/i.test(m)) return;
       if(window.__diagPush) window.__diagPush("RÉSEAU","Vue planète : "+m);
     });
-  }else{
-    glMap.jumpTo({center:[c.lng, c.lat], zoom:zEntree});
-    $("#globe").classList.remove("load");
-    glMaj();
-    if(!glRaf) glRaf=requestAnimationFrame(glBoucle);
   }
+  /* Il n'y a plus de branche « carte déjà construite » : fermeGlobe détruit
+     toujours l'instance et remet glMap à null, et l'ouverture est désormais non
+     réentrante. Cette branche était du code mort qui, atteinte par un double
+     clic, retirait le voyant de chargement avant que quoi que ce soit soit prêt. */
   setTimeout(()=>{ if(glMap) glMap.resize(); }, 60);
 }
 
@@ -7628,6 +7714,14 @@ function fermeGlobe(){
   const box=$("#globe");
   box.classList.remove("on","load");
   box.setAttribute("aria-hidden","true");
+  /* On rend l'arrière-plan au clavier et aux lecteurs d'écran, et on repose le
+     focus là où il était — sinon il retombe sur <body> et la navigation au
+     clavier repart du début de la page. */
+  glInerte(false);
+  if(glFocusAvant && document.contains(glFocusAvant)){
+    try{ glFocusAvant.focus(); }catch(_){}
+  }
+  glFocusAvant=null;
   /* La mémoire vidéo est RENDUE. Garder une carte 3D en sommeil derrière une
      superposition masquée retient un contexte WebGL et ses textures — sur une
      machine modeste, c'est exactement ce qui finit par tout ralentir. */
@@ -7647,13 +7741,14 @@ $("#gl-spin").addEventListener("click", e=>{
 });
 $("#gl-night").addEventListener("click", e=>{
   if(!glMap) return;
-  const on=e.currentTarget.getAttribute("aria-pressed")!=="true";
-  e.currentTarget.setAttribute("aria-pressed", String(on));
-  try{ glMap.setLayoutProperty("nuit","visibility", on?"visible":"none"); }catch(_){}
+  glNuit=!glNuit;
+  e.currentTarget.setAttribute("aria-pressed", String(glNuit));
+  try{ glMap.setLayoutProperty("nuit","visibility", glNuit?"visible":"none"); }catch(_){}
 });
 $("#gl-relief").addEventListener("click", e=>{
   if(!glMap) return;
-  const on=e.currentTarget.getAttribute("aria-pressed")!=="true";
+  const on=!glRelief;
+  glRelief=on;
   e.currentTarget.setAttribute("aria-pressed", String(on));
   try{
     if(on){
