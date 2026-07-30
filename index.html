@@ -298,6 +298,13 @@ details a:hover{border-bottom-color:#7fc4ea}
    que le compositeur traite sans redessiner. */
 .mk.fire.a1{opacity:.72}
 .mk.fire.a2{opacity:.88}
+/* Âge du signalement d'un incendie référencé : la teinte suit le retard réel
+   du référentiel, pour qu'un sinistre clos depuis dix jours ne se lise plus
+   comme un feu du matin. */
+.mk.fire.j0{--mc:#ff3d1f}
+.mk.fire.j1{--mc:#e0a33c}
+.mk.fire.j2{--mc:#b5a06a;opacity:.8}
+.mk.fire.j3{--mc:#7d8ba6;opacity:.62}
 .mk.fire.a3 .mic{animation:breathe 2.6s ease-in-out infinite}
 @keyframes breathe{0%,100%{opacity:1}50%{opacity:.62}}
 .mk.cyc .mic{animation:spin 9s linear infinite}
@@ -435,6 +442,10 @@ body.base-light #map{background:#cfd8e3}
 .chk.n .ic{color:var(--t3)}
 .badge{display:inline-block;border-radius:8px;padding:4px 10px;font:700 12px var(--mono);
   color:#0a0f1c;background:var(--b,#ffc46b);margin:7px 0 2px}
+/* État d'un sinistre : plaque franche, lisible avant même de lire la phrase */
+.stbadge{display:inline-block;margin:4px 0 6px;padding:3px 9px;border-radius:3px;
+  border:1px solid var(--c,#888);color:var(--c,#888);
+  font:700 9.5px/1.4 system-ui,sans-serif;letter-spacing:.11em}
 
 /* ================= DIVERS ================= */
 #card{position:absolute;left:0;right:0;bottom:0;z-index:1215;background:var(--panel);
@@ -916,6 +927,19 @@ body.base-light .leaflet-control-scale-line{background:rgba(255,255,255,.8)!impo
         </div>
 
         <div class="lg">
+          <span class="lg-t">Incendie · état réel</span>
+          <div class="wlegend">
+            <span><i style="background:#ff1744"></i>en cours, en progression</span>
+            <span><i style="background:#ff6d00"></i>en cours, stable</span>
+            <span><i style="background:#c8cf4a"></i>en baisse</span>
+            <span><i style="background:#e0a33c"></i>déclinant</span>
+            <span><i style="background:#b5a06a"></i>extinction probable</span>
+            <span><i style="background:#7d8ba6"></i>éteint (trait pointillé)</span>
+            <span><i style="background:#4a3325"></i>surface déjà brûlée</span>
+          </div>
+        </div>
+
+        <div class="lg">
           <span class="lg-t">Foyer · puissance rayonnée</span>
           <div class="wlegend">
             <span><i style="background:#ffc107"></i>faible</span>
@@ -926,14 +950,10 @@ body.base-light .leaflet-control-scale-line{background:rgba(255,255,255,.8)!impo
         </div>
 
         <div class="lg">
-          <span class="lg-t">Aéronef · altitude</span>
+          <span class="lg-t">Moyen aérien · rôle</span>
           <div class="wlegend">
-            <span><i style="background:#f87171"></i>&lt;3k</span>
-            <span><i style="background:#fb923c"></i>&lt;10k</span>
-            <span><i style="background:#fbbf24"></i>&lt;20k</span>
-            <span><i style="background:#a3e635"></i>&lt;30k</span>
-            <span><i style="background:#38bdf8"></i>&lt;38k</span>
-            <span><i style="background:#c084fc"></i>38k+ ft</span>
+            <span><i style="background:#ff3d5f"></i>engagé — lutte, secours, sanitaire</span>
+            <span><i style="background:#d9a92e"></i>renfort d’État — acheminement</span>
           </div>
         </div>
 
@@ -1086,21 +1106,21 @@ body.base-light .leaflet-control-scale-line{background:rgba(255,255,255,.8)!impo
       </details>
 
       <details>
-        <summary><svg class="ic x16" aria-hidden="true"><use href="#i-plane"/></svg><span>Trafic aérien : ce que l’on voit, et ce qu’on ne voit pas</span></summary>
-        <p>Chaque appareil est représenté par une forme orientée selon son <b>cap réel</b>, colorée selon son <b>altitude</b> (rouge au ras du sol → violet en haute croisière). Trois silhouettes distinctes : <b>avion</b>, <b>hélicoptère</b> (rotor visible) et <b>drone</b> (croix). Touchez-en un : modèle exact, immatriculation, altitude en pieds et en mètres, vitesse, cap, montée ou descente, et code transpondeur.</p>
-        <p><b>Fluide sans surcharge</b> : les positions sont relevées toutes les 14 secondes, mais entre deux relevés chaque appareil <b>continue d’avancer</b> d’après son cap et sa vitesse réels. Le mouvement est donc continu alors que le réseau ne travaille presque pas. Le rendu se fait sur canvas : même avec des centaines d’appareils, l’affichage reste léger.</p>
+        <summary><svg class="ic x16" aria-hidden="true"><use href="#i-helicopter"/></svg><span>Moyens aériens engagés : ce que l’on voit, et ce qu’on ne voit pas</span></summary>
+        <p><b>Cette couche ne montre pas le trafic aérien.</b> Elle montre les <b>moyens engagés</b> sur un événement : bombardiers d’eau, hélicoptères de lutte et de secours, évacuations sanitaires, garde-côtes, recherche et sauvetage, protection civile. Tout le transport commercial, le fret et l’aviation générale sont <b>écartés à la lecture</b>, avant même d’être dessinés. Un Airbus en croisière n’apprend rien sur un incendie ; trois Canadair qui tournent au-dessus d’un massif, énormément.</p><p>Deux couleurs, deux natures : <b style="color:#ff9db0">rouge</b> pour un moyen engagé, <b style="color:#e6c65c">or</b> pour un renfort d’État sur une plateforme d’acheminement ou d’évacuation (Hercules, C-295, Chinook, NH90…). Chaque appareil est orienté selon son <b>cap réel</b> et porte son indicatif ; zoomez et son rôle exact s’affiche dessous.</p>
+        <p><b>Trajectoire réellement parcourue</b> : les positions relevées sont mémorisées et tracées derrière chaque moyen engagé, sur une demi-heure. Sur un bombardier d’eau, cette trace dessine le <b>circuit entre le point d’écopage et le front</b> — c’est là que se lit le travail en cours, bien mieux que dans une position isolée.</p><p><b>Fluide sans surcharge</b> : les positions sont relevées toutes les 20 secondes, mais entre deux relevés chaque appareil <b>continue d’avancer</b> d’après son cap et sa vitesse réels. Le mouvement est continu alors que le réseau ne travaille presque pas.</p>
         <p><b>Ce qui n’apparaît pas — soyons clairs</b> :</p>
-        <p><b>Trois niveaux de signalement.</b> <b>Halo rouge</b> : moyens de secours engagés — bombardiers d’eau, Dash-8, hélicoptères de la Sécurité civile, évacuations sanitaires, garde-côtes. <b>Liseré doré discret</b> : appareils d’État — militaires, gouvernementaux, vols de calibration. <b>Aucun marquage</b> : vols ordinaires. La distinction compte : un chasseur en exercice n’a rien à voir avec un Canadair au-dessus d’un incendie, et les confondre viderait le signal de son sens.</p>
-        <p><b>Les moyens de secours sont mis en évidence.</b> Bombardiers d’eau Canadair (indicatifs PELIC), Dash-8 (MILAN), hélicoptères de la Sécurité civile (DRAGON), évacuations sanitaires et garde-côtes sont entourés d’un <b>halo rouge</b>, dessinés plus grands et <b>nommés à tous les niveaux de zoom</b> — sans quoi ils se perdent parmi des centaines de vols commerciaux. Leur rôle exact s’affiche dans leur fiche.</p>
+        <p><b>Comment un appareil est reconnu.</b> Trois signaux, dans cet ordre : son <b>indicatif radio officiel</b> (Pélican et Milan pour la Sécurité civile française, Dragon pour ses hélicoptères, Drago en Italie, Tanker, Lead et Helitack en Amérique du Nord, Rescue pour le sauvetage britannique, Christoph et Rega pour les HEMS germanophones, SAMU en France) ; son <b>type d’appareil</b> quand celui-ci ne sert qu’à ça (Canadair CL-415, Air Tractor AT-802, Dromader, Erickson Aircrane) ; enfin sa <b>description constructeur</b>. Les types à double usage sont volontairement exclus de la reconnaissance automatique : un King Air ou un Dash-8 est le plus souvent un vol d’affaires ou une ligne régionale, et l’accepter ferait rentrer du trafic ordinaire.</p><p>Un chasseur en exercice n’a rien à voir avec un Canadair au-dessus d’un incendie : le seul drapeau « militaire » ne suffit donc jamais. Il est retenu uniquement combiné à une plateforme réellement utilisée pour l’acheminement de secours.</p>
+        <p><b>Un anneau fin</b>, resserré au contour du symbole, marque les moyens engagés. Il était auparavant presque quatre fois plus large que l’appareil, avec un remplissage qui empâtait la carte ; à quelques appareils affichés au lieu de plusieurs centaines, un liseré discret suffit.</p>
         <p>Le panneau <b>Ma sécurité</b> les signale aussi : « 3 moyens aériens de secours en vol » est une information rassurante, c’est le signe concret que le sinistre est activement combattu.</p>
-        <p><b>Les drones de loisir n’émettent pas d’ADS-B.</b> Un DJI ou un drone de particulier est <b>invisible ici</b>, et le restera : aucun flux public ne les diffuse. Seuls les gros drones professionnels ou militaires équipés d’un transpondeur apparaissent, sous la catégorie B6.</p>
+        <p><b>Les drones de loisir n’émettent pas d’ADS-B.</b> Un DJI ou un drone de particulier est <b>invisible ici</b>, et le restera : aucun flux public ne les diffuse.</p>
         <p><b>Certains appareils d’État</b> coupent leur transpondeur ou sont filtrés à la source.</p>
         <p><b>Les zones sans récepteur au sol</b> — plein océan, déserts, régions isolées — restent vides : ce réseau est alimenté par des volontaires, pas par des satellites.</p>
-        <p><b>Pourquoi certains appareils semblaient invisibles</b> — les bombardiers d’eau travaillent à très basse altitude, parfois quelques dizaines de mètres au-dessus des flammes. Leur signal n’atteint alors plus les récepteurs au sol : ils disparaissent une passe, reviennent la suivante. La carte les <b>conserve désormais jusqu’à 6 minutes</b> sans confirmation, en poursuivant leur trajectoire d’après leur cap, plutôt que de les effacer. Leur fiche indique alors « position non confirmée depuis X s ». Les vols ordinaires sont conservés 3 minutes.</p>
+        <p><b>Pourquoi un bombardier d’eau peut clignoter</b> — il travaille à très basse altitude, parfois quelques dizaines de mètres au-dessus des flammes, et son signal n’atteint alors plus les récepteurs au sol : il disparaît une passe, revient la suivante. La carte le <b>conserve jusqu’à 6 minutes</b> sans confirmation en poursuivant sa trajectoire d’après son cap, plutôt que de l’effacer. Sa fiche indique alors « position non confirmée depuis X s ».</p>
         <p>Le rayon de chaque sondage correspond maintenant à la <b>demi-diagonale exacte</b> de la zone à couvrir : plus aucun coin d’écran n’est oublié, ce qui laissait auparavant des trous sur les vues larges.</p>
         <p><b>Couverture et limite du service</b> : chaque interrogation est plafonnée à 463 km de rayon. Sur une vue large, la carte lance donc <b>2 à 4 sondages répartis</b>, envoyés <b>un par un à 1,5 seconde d’intervalle</b>, et fusionne les résultats sans doublons.</p>
         <p>Pourquoi si prudemment ? Le service est <b>communautaire et gratuit</b>. En testant, j’ai constaté qu’un rythme trop soutenu déclenche un refus complet (erreur 503) pendant plusieurs dizaines de secondes — c’est ce qui causait les avions manquants. Le réglage actuel consomme <b>0,2 requête par seconde</b>, très en deçà des limites.</p>
-        <p>Conséquence assumée : à l’échelle d’un continent, la couverture est <b>volontairement partielle</b>. Zoomez sur une région pour voir la totalité du trafic — c’est là que la précision compte vraiment.</p>
+        <p>Conséquence assumée : à l’échelle d’un continent, la couverture est <b>volontairement partielle</b>. Zoomez sur une région pour être certain de voir tous les moyens engagés — c’est là que la précision compte vraiment.</p>
         <p>Les appareils dont la position n’a pas été rafraîchie depuis plus de 75 secondes sont <b>affichés en transparence</b> : vous voyez immédiatement ceux dont la position est incertaine.</p>
         <p>Source : réseau communautaire ADS-B. Position typiquement vieille de quelques secondes.</p>
       </details>
@@ -1684,7 +1704,7 @@ const LAYERS = [
   {id:"tg-ice",       cat:"terre", icon:"ice",     nm:"Glaces",   full:"Icebergs et glaces",             c:"#9bd7ff", cnt:"c-ice",       on:0},
   {id:"tg-other",     cat:"terre", icon:"warning", nm:"Autres",   full:"Autres événements", sub:"sécheresses, glissements, tempêtes de sable", c:"#ffc46b", cnt:"c-other", on:1},
   /* ---- Ciel ---- */
-  {id:"tg-air",       cat:"ciel", icon:"plane", nm:"Trafic aérien", full:"Trafic aérien en direct", sub:"ADS-B", c:"#38bdf8", cnt:"c-air", on:0},
+  {id:"tg-air",       cat:"ciel", icon:"helicopter", nm:"Moyens engagés", full:"Moyens aériens engagés", sub:"lutte, secours, évacuation — le trafic commercial est écarté", c:"#ff3d5f", cnt:"c-air", on:0},
   /* ---- Alertes ---- */
   {id:"tg-safe",      cat:"alertes", icon:"shield", nm:"Ma sécurité", full:"Ma sécurité", sub:"suis-je concerné, ici, maintenant ?", c:"#4be3a4", cnt:"c-safe",  on:0},
   {id:"tg-alerts",    cat:"alertes", icon:"siren",  nm:"Officielles", full:"Alertes officielles", sub:"ONU et météorologues d'État", c:"#ff9f43", cnt:"c-alerts", on:1, scope:"wus"}
@@ -1867,24 +1887,51 @@ async function preAvailable(){
     window.__diagPush("ALERTE","Aucune donnee pre-calculee (dossier data/ absent) — lecture en direct depuis les serveurs d'origine");
   return PRE_AVAIL;
 }
-/* Un fichier absent le restera jusqu'au prochain passage du robot :
-   inutile de le redemander à chaque rafraîchissement. */
+/* Un fichier absent le restera jusqu'au prochain passage du robot : inutile de
+   le redemander à chaque rafraîchissement.
+
+   La mémoire est persistante et non plus seulement en RAM. La garde par liste
+   `files` de meta.json ne suffit pas : si ce fichier est encore en cache CDN,
+   ou s'il précède le passage du robot qui a introduit la liste, la garde ne
+   joue pas et une requête part quand même — c'est le 404 sur data/effis.json
+   observé dans le journal. En retenant l'absence pendant six heures, d'un
+   chargement à l'autre, le journal reste propre même quand meta.json est en
+   retard. Six heures, et pas plus : un fichier peut réapparaître dès que sa
+   source redevient joignable. */
 const PRE_MISS=new Map();
+const PRE_MISS_TTL=6*3600e3;
+/* On accède à localStorage directement, avec garde : l'enveloppe LS n'est
+   déclarée que bien plus bas dans le script, et un `const` n'est pas lisible
+   avant sa déclaration — s'y référer ici couperait le démarrage. */
+(function loadPreMiss(){
+  try{
+    const j=JSON.parse(window.localStorage.getItem("preMiss")||"{}");
+    const now=Date.now();
+    Object.keys(j).forEach(k=>{ if(now-j[k]<PRE_MISS_TTL) PRE_MISS.set(k,j[k]); });
+  }catch(e){}
+})();
+function savePreMiss(){
+  try{
+    const o={};
+    for(const [k,v] of PRE_MISS) o[k]=v;
+    window.localStorage.setItem("preMiss", JSON.stringify(o));
+  }catch(e){}
+}
 async function preload(name, maxAgeMs){
   if(!(await preAvailable())) return null;
   if(PRE_FILES && PRE_FILES.indexOf(name)<0) return null;   /* non produit : on n'essaie même pas */
   const miss=PRE_MISS.get(name);
-  if(miss && Date.now()-miss < 900000) return null;
+  if(miss && Date.now()-miss < PRE_MISS_TTL) return null;
   try{
     const d = await fetchJSON(DATA_BASE+name+".json?v="+Math.floor(Date.now()/300000), null, 240000, 12000);
     if(!d) return null;
     if(d.t){ PRE.seen=true; PRE.seenAge=Date.now()-d.t; }
     if(maxAgeMs && d.t && (Date.now()-d.t) > maxAgeMs) return null;   /* trop vieux : on ira au direct */
-    PRE_MISS.delete(name);
+    if(PRE_MISS.delete(name)) savePreMiss();
     PRE.ok=true;
     if(d.t) PRE.age=Date.now()-d.t;
     return d;
-  }catch(e){ PRE_MISS.set(name, Date.now()); return null; }
+  }catch(e){ PRE_MISS.set(name, Date.now()); savePreMiss(); return null; }
 }
 window.__preState=()=>PRE;
 
@@ -2222,7 +2269,7 @@ async function loadEonet(){
   layers.volcanoes.clearLayers(); layers.other.clearLayers();
   layers.ice.clearLayers(); state.iceRaw=[]; state.iceBuilt=false;
   const mk = {fires:[], volcanoes:[], other:[]};
-  const n = {fires:0, storms:0, volcanoes:0, other:0, ice:0};
+  const n = {fires:0, storms:0, volcanoes:0, other:0, ice:0, archives:0};
   for(const ev of (data.events||[])){
     const catId = ev.categories && ev.categories[0] ? ev.categories[0].id : "";
     const pts = (ev.geometry||[]).filter(g => g.type==="Point" && Array.isArray(g.coordinates));
@@ -2235,10 +2282,39 @@ async function loadEonet(){
     if(!ll) continue;
     const src = ev.sources && ev.sources[0] ? ev.sources[0].url : null;
     if(catId==="wildfires"){
+      /* Ces incendies viennent du référentiel NASA EONET, qui accuse 2 à 14
+         jours de retard. Ils étaient tous dessinés avec la même flamme, à peine
+         plus pâle quand ils étaient vieux : impossible de distinguer un feu de
+         ce matin d'un sinistre clos depuis dix jours. On les datte maintenant
+         explicitement, avec un état écrit et une couleur qui suit. */
       const hrsF=when?(Date.now()-new Date(when))/36e5:99;
-      const aCls=hrsF<12?"a3":hrsF<48?"a2":"a1";
-      const m=L.marker(ll,{icon:mkIcon("fire",aCls)});
-      m.on("click",()=>fireAnalysis(ll[0],ll[1],ev.title,first,when,src));
+      const jours=hrsF/24;
+      /* Écrémage des archives. Mesuré sur la vue mondiale : 6 917 incendies
+         référencés, dont 6 871 — 99,3 % — dataient de plus de huit jours. Des
+         milliers de flammes pour des sinistres clos depuis des semaines, qui
+         noyaient les rares feux réellement récents et coûtaient très cher en
+         rendu. Au-delà de huit jours, l'événement n'informe plus sur rien : il
+         est écarté, et leur nombre est annoncé dans la fiche de la couche. */
+      if(jours>8){ n.archives++; continue; }
+      let aCls, etat, col, why;
+      if(hrsF<24){ aCls="a3"; etat="Signalé aujourd’hui"; col="#ff3d1f";
+        why="Relevé du jour dans le référentiel. Croisez avec la couche « Foyers » pour l’activité de l’heure."; }
+      else if(jours<3){ aCls="a2"; etat="Signalé il y a "+Math.round(jours)+" j"; col="#e0a33c";
+        why="Le référentiel a plusieurs jours de retard : ce sinistre peut être terminé."; }
+      else if(jours<8){ aCls="a1"; etat="Ancien — "+Math.round(jours)+" jours"; col="#b5a06a";
+        why="Plus d’une semaine de retard. À considérer comme un historique, pas comme une situation en cours."; }
+      else { aCls="a1"; etat="Archive — "+Math.round(jours)+" jours"; col="#7d8ba6";
+        why="Événement ancien, conservé comme référence. Il ne dit rien de la situation actuelle."; }
+      const m=L.marker(ll,{icon:mkIcon("fire",aCls+" j"+(jours<1?0:jours<3?1:jours<8?2:3))});
+      m.bindPopup(`<div class="pp-t" style="color:${col}">${ic("engine","x18")}${esc(ev.title)}</div>
+        <div class="pp-cat">Incendie référencé · NASA EONET</div>
+        <div class="stbadge" style="--c:${col}">${etat.toUpperCase()}</div>
+        <div class="pp-row" style="color:#8fa4cc;font-size:11.5px">${why}</div>
+        <div class="pp-row">Dernier relevé du référentiel : <b>${fmtDate(when)}</b></div>
+        <a class="pp-link" href="#" onclick="fireAnalysis(${ll[0]},${ll[1]},${JSON.stringify(String(ev.title)).replace(/"/g,"&quot;")},${first||null},${JSON.stringify(when)});return false">${ic("projection","x14")}Analyser l’activité réelle sur place</a><br>
+        <a class="pp-link" href="#" onclick="showNews(${ll[0]},${ll[1]},'fire','Incendie — actualités');return false">${ic("news","x14")}Actualités du secteur</a>
+        ${src?`<a class="pp-link" href="${esc(src)}" target="_blank" rel="noopener">Source officielle${ic("external","x12 xl")}</a>`:""}`,
+        {maxWidth:mqMobile.matches?258:310});
       mk.fires.push(m); n.fires++;
     } else if(catId==="severeStorms"){
       processStorm(ev, pts, ll, when, src); n.storms++;
@@ -2269,6 +2345,8 @@ async function loadEonet(){
   layers.other.addLayers(mk.other);
   if($("#tg-ice").checked) buildIce();
   setC("c-fires",n.fires); setC("ch-fires",n.fires);
+  if(n.archives && window.__diagPush)
+    window.__diagPush("INFO", n.archives+" incendies references de plus de 8 jours ecartes (archives sans valeur informative)");
   setC("c-storms",n.storms); setC("ch-storms",n.storms);
   setC("c-volcanoes",n.volcanoes); setC("c-other",n.other); setC("c-ice",n.ice);
 }
@@ -2392,11 +2470,16 @@ async function loadPerims(){
     const data = await fetchJSON(url, null, 1800000, 30000);
     layers.perims.clearLayers();
     const geo = L.geoJSON(data,{renderer:cnv,
-      style:{color:"#c2103a",weight:2,fillColor:"#ff7a3c",fillOpacity:.28},
+      /* Même logique que pour les périmètres européens : ce polygone est la
+         surface brûlée relevée au sol, pas un front actif. Palette de brûlé,
+         contour plein pour le distinguer du tracé satellite européen. */
+      style:{color:"#b08560",weight:2.1,fillColor:"#4a3325",fillOpacity:.38},
       onEachFeature:(f,l)=>{
         const p=f.properties||{};
         const ha = p.poly_GISAcres ? Math.round(p.poly_GISAcres*0.4047).toLocaleString("fr-FR") : null;
-        l.bindPopup(`<div class="pp-t">${ic("polygon","x18")}${esc(p.poly_IncidentName||"Incendie")}</div>
+        l.bindPopup(`<div class="pp-t" style="color:#c79a76">${ic("polygon","x18")}${esc(p.poly_IncidentName||"Incendie")}</div>
+          <div class="stbadge" style="--c:#b08560">SURFACE BRÛLÉE</div>
+          <div class="pp-row" style="color:#8fa4cc;font-size:11.5px">Périmètre <b>relevé sur le terrain</b> par les agences fédérales américaines. Il délimite ce qui a brûlé, et non le front actif.</div>
           <div class="pp-cat">Périmètre brûlé — relevé officiel de terrain</div>
           ${ha?`<div class="pp-row">Superficie touchée : <b>${ha} hectares</b></div>`:""}
           ${p.poly_DateCurrent?`<div class="pp-row">Relevé : <b>${fmtDate(p.poly_DateCurrent)}</b></div>`:""}
@@ -2842,14 +2925,21 @@ async function loadEuba(){
     }
     layers.euba.clearLayers();
     const feats=d.features||[];
+    /* Palette de cicatrice de brûlé, volontairement terreuse et sourde.
+       Ces contours étaient rouge vif, donc indiscernables d'un feu en cours —
+       alors qu'un périmètre EFFIS décrit une surface DÉJÀ brûlée, parfois
+       depuis des semaines. Le brun dit « ça a brûlé », le rouge est réservé à
+       ce qui brûle maintenant. */
     L.geoJSON(d,{renderer:cnv,
-      style:{color:"#ffffff",weight:4,opacity:.5,fill:false}}).addTo(layers.euba);
+      style:{color:"#0b0806",weight:3.5,opacity:.35,fill:false}}).addTo(layers.euba);
     L.geoJSON(d,{renderer:cnv,
-      style:{color:"#c2103a",weight:2.2,opacity:1,fillColor:"#ff4b2b",fillOpacity:.3},
+      style:{color:"#9c7355",weight:1.8,opacity:.95,fillColor:"#4a3325",fillOpacity:.42},
       onEachFeature:(f,l)=>{
         const p=f.properties||{};
         const ha=p.AREA_HA!=null?Number(p.AREA_HA):null;
-        l.bindPopup(`<div class="pp-t">${ic("perimeter","x18")}Zone brûlée — ${esc(p.COMMUNE||p.PROVINCE||"périmètre")}</div>
+        l.bindPopup(`<div class="pp-t" style="color:#c79a76">${ic("perimeter","x18")}Surface déjà brûlée — ${esc(p.COMMUNE||p.PROVINCE||"périmètre")}</div>
+          <div class="stbadge" style="--c:#9c7355">FEU PASSÉ</div>
+          <div class="pp-row" style="color:#8fa4cc;font-size:11.5px">Ce contour délimite une surface <b>qui a brûlé</b>, relevée par satellite. Ce n’est pas un feu en cours : pour l’activité actuelle, utilisez la couche « Foyers » ou « Incendies ».</div>
           <div class="pp-cat">Contour officiel Copernicus (UE)</div>
           ${ha!=null?`<div class="pp-row">Superficie brûlée : <b>${ha.toLocaleString("fr-FR")} hectares</b>${ha>100?` (~${(ha/100).toFixed(1)} km²)`:""}</div>`:""}
           ${p.PROVINCE?`<div class="pp-row">${esc(p.PROVINCE)}${p.COUNTRY?" · "+esc(p.COUNTRY):""}</div>`:""}
@@ -2954,6 +3044,47 @@ function buildComplexes(pts){
   });
   return [...groups.values()].filter(g=>g.length>=4);
 }
+/* ============================================================
+   ÉTAT D'UN SINISTRE — définition unique
+   ------------------------------------------------------------
+   Le reproche était juste : une zone entourée d'un trait rouge plein se lit
+   comme un feu qui brûle, alors que la dernière chaleur y a peut-être été vue
+   il y a deux jours. La couleur variait un peu, mais le TRAIT et le
+   REMPLISSAGE restaient identiques, donc le poids visuel aussi.
+
+   Un même objet décrit maintenant l'état, et il pilote à la fois la couleur,
+   le style du tracé et la fiche. Les satellites VIIRS et MODIS survolent un
+   point plusieurs fois par jour : au-delà de douze heures sans aucune
+   détection, un feu est très probablement maîtrisé, au-delà de vingt-quatre
+   il est éteint. Un feu éteint passe en gris et en trait pointillé — il reste
+   visible parce que la surface a brûlé, mais il ne se confond plus avec un
+   sinistre en cours.
+   ============================================================ */
+function fireState(fresh, trend){
+  if(fresh>24) return {key:"eteint", nm:"Éteint", col:"#7d8ba6", dash:"6 5", fill:.05, w:1.5,
+    label:"Éteint — aucune chaleur détectée depuis "+Math.round(fresh)+" h",
+    why:"Les satellites survolent ce point plusieurs fois par jour. Plus d’une journée sans la moindre détection thermique : le feu ne brûle plus. La zone reste affichée parce qu’elle a brûlé."};
+  if(fresh>12) return {key:"residuel", nm:"Résiduel", col:"#b5a06a", dash:"9 4", fill:.07, w:1.8,
+    label:"Extinction probable — plus rien depuis "+Math.round(fresh)+" h",
+    why:"Aucune détection depuis plus de douze heures. Il peut rester des points chauds au sol, mais il n’y a plus de front actif visible du ciel."};
+  if(fresh>6)  return {key:"declin", nm:"Déclinant", col:"#e0a33c", dash:null, fill:.10, w:2.1,
+    label:"Déclinant — dernière chaleur il y a "+Math.round(fresh)+" h",
+    why:"Le feu était encore actif au dernier passage satellite, mais rien n’a été détecté depuis plusieurs heures."};
+  if(trend>0.45) return {key:"progression", nm:"En progression", col:"#ff1744", dash:null, fill:.20, w:3,
+    label:"EN COURS — activité en forte hausse, le feu prend de l’ampleur",
+    why:"La puissance rayonnée mesurée augmente nettement entre les deux moitiés de la série de détections."};
+  if(trend>0.15) return {key:"actif", nm:"En cours", col:"#ff3d1f", dash:null, fill:.17, w:2.7,
+    label:"EN COURS — activité en hausse", why:"La puissance rayonnée mesurée augmente."};
+  if(trend<-0.45) return {key:"maitrise", nm:"Maîtrisé", col:"#7fc45a", dash:null, fill:.10, w:2.1,
+    label:"EN COURS mais en forte baisse — vraisemblablement maîtrisé",
+    why:"La puissance rayonnée chute fortement : la lutte porte, ou le combustible s’épuise."};
+  if(trend<-0.15) return {key:"baisse", nm:"En baisse", col:"#c8cf4a", dash:null, fill:.12, w:2.2,
+    label:"EN COURS mais en baisse — la lutte semble porter",
+    why:"La puissance rayonnée mesurée diminue."};
+  return {key:"stable", nm:"En cours", col:"#ff6d00", dash:null, fill:.15, w:2.5,
+    label:"EN COURS — activité stable", why:"La puissance rayonnée mesurée ne montre pas de tendance nette."};
+}
+
 function analyseComplex(g){
   const n=g.length;
   const frp=g.reduce((a,p)=>a+(p.frp||0),0);
@@ -2993,16 +3124,9 @@ function analyseComplex(g){
   }
   const cLa=g.reduce((a,p)=>a+p.la,0)/n, cLo=g.reduce((a,p)=>a+p.lo,0)/n;
   const fresh=Math.min(...g.map(p=>p.hrs));
-  /* État du sinistre, dit simplement */
-  let state, stateCol;
-  if(fresh>18)            { state="Aucune chaleur détectée depuis "+Math.round(fresh)+" h — probablement éteint"; stateCol="#8fa4cc"; }
-  else if(fresh>10)       { state="Plus de détection depuis "+Math.round(fresh)+" h — en voie d’extinction"; stateCol="#a3e635"; }
-  else if(trend<-0.45)    { state="Activité en forte baisse — feu vraisemblablement maîtrisé"; stateCol="#4be3a4"; }
-  else if(trend<-0.15)    { state="Activité en baisse — la lutte semble porter"; stateCol="#a3e635"; }
-  else if(trend>0.45)     { state="Activité en forte hausse — feu qui prend de l’ampleur"; stateCol="#ff1744"; }
-  else if(trend>0.15)     { state="Activité en hausse"; stateCol="#ff9f43"; }
-  else                    { state="Activité stable"; stateCol="#ffc46b"; }
-  return {n, frp, hull, area, burned, t0, t1, vec, c:[cLa,cLo], fresh, trend, state, stateCol};
+  const st=fireState(fresh, trend);
+  return {n, frp, hull, area, burned, t0, t1, vec, c:[cLa,cLo], fresh, trend,
+          st, state:st.label, stateCol:st.col};
 }
 function drawComplexes(){
   layers.complexes.clearLayers();
@@ -3010,13 +3134,24 @@ function drawComplexes(){
   const cx=buildComplexes(tlFilter(hotRaw)).map(analyseComplex)
     .filter(c=>c.area>=0.4).sort((a,b)=>b.frp-a.frp).slice(0,40);
   for(const c of cx){
-    const col=c.fresh<12?"#ff1744":c.fresh<24?"#ff6d00":"#c98a3a";
+    const st=c.st, col=st.col, mort=(st.key==="eteint"||st.key==="residuel");
     if(c.hull){
-      L.polygon(c.hull,{renderer:cnv,color:"#fff",weight:4,opacity:.45,fill:false}).addTo(layers.complexes);
-      L.polygon(c.hull,{renderer:cnv,color:col,weight:2.4,opacity:1,fillColor:col,fillOpacity:.14}).addTo(layers.complexes);
+      /* Liseré blanc de lisibilité, atténué sur un feu éteint pour qu'il ne
+         tire pas l'œil autant qu'un sinistre en cours. */
+      L.polygon(c.hull,{renderer:cnv,color:"#fff",weight:mort?2.5:4,
+        opacity:mort?.2:.45,fill:false}).addTo(layers.complexes);
+      /* Trait pointillé et remplissage presque nul pour un feu éteint :
+         la surface brûlée reste lisible, le sinistre ne se lit plus comme actif. */
+      L.polygon(c.hull,{renderer:cnv,color:col,weight:st.w,opacity:mort?.85:1,
+        dashArray:st.dash||null,fillColor:col,fillOpacity:st.fill}).addTo(layers.complexes);
     }
     let vecTxt="";
-    if(c.vec){
+    /* Un feu éteint ne progresse plus : dessiner une flèche de propagation
+       serait faux. On l'écrit explicitement plutôt que de laisser le doute. */
+    if(mort && c.vec){
+      vecTxt=`<div class="pp-row">Aucune progression : plus aucune chaleur détectée depuis <b>${Math.round(c.fresh)} h</b>. La direction relevée pendant l’épisode était le <b>${compass(c.vec.brg)}</b>.</div>`;
+    }
+    if(c.vec && !mort){
       const tip=destPoint(c.vec.from[0],c.vec.from[1],c.vec.brg,Math.max(1.2,c.vec.spd*6));
       L.polyline([c.vec.from,tip],{renderer:cnv,color:"#fff",weight:5,opacity:.5}).addTo(layers.complexes);
       L.polyline([c.vec.from,tip],{renderer:cnv,color:col,weight:2.6}).addTo(layers.complexes);
@@ -3026,9 +3161,11 @@ function drawComplexes(){
       });
       vecTxt=`<div class="pp-row"><b>Propagation observée</b> : vers le <b>${compass(c.vec.brg)}</b> à <b>${c.vec.spd.toFixed(2)} km/h</b><br><span style="color:#8fa4cc">mesurée sur ${c.vec.dk.toFixed(1)} km parcourus en ${c.vec.dt.toFixed(1)} h entre deux passages satellites</span></div>`;
     }
-    const html=`<div class="pp-t" style="color:${col}">${ic("flame","x18")}Incendie — ${c.area>=1?c.area.toFixed(1)+" km²":Math.round(c.area*100)+" ha"}</div>
+    const html=`<div class="pp-t" style="color:${col}">${ic(mort?"smoke":"flame","x18")}${mort?"Zone brûlée":"Incendie"} — ${c.area>=1?c.area.toFixed(1)+" km²":Math.round(c.area*100)+" ha"}</div>
       <div class="pp-cat">Foyers regroupés · analyse automatique</div>
-      <div class="pp-row" style="color:${c.stateCol};font-weight:600">${c.state}</div>
+      <div class="stbadge" style="--c:${col}">${st.nm.toUpperCase()}</div>
+      <div class="pp-row" style="color:${col};font-weight:600">${st.label}</div>
+      <div class="pp-row" style="color:#8fa4cc;font-size:11.5px">${st.why}</div>
       <div class="pp-row"><span class="fresh" style="background:${c.fresh<6?"#4be3a4":c.fresh<24?"#ffc46b":"#8fa4cc"}"></span>Détection la plus récente : il y a <b>${c.fresh<1?"moins d’1 h":Math.round(c.fresh)+" h"}</b></div>
       <div class="pp-row">Surface <b>réellement détectée en feu</b> : <b>${(c.burned*100).toLocaleString("fr-FR",{maximumFractionDigits:0})} ha</b><br><span style="color:#8fa4cc">somme des empreintes satellites, recouvrements retirés</span></div>
       <div class="pp-row">Zone concernée (enveloppe) : <b>${(c.area*100).toLocaleString("fr-FR",{maximumFractionDigits:0})} ha</b> · <b>${c.n}</b> foyers<br><span style="color:#8fa4cc">périmètre englobant — inclut le terrain non brûlé entre les foyers</span></div>
@@ -3380,7 +3517,9 @@ function drawForecast(){
   if(!FC){ setC("c-fc","…"); loadForecastGrid(); return; }
   let n=0;
   let ignored=0;
-  lastCx.filter(c=>c.hull && c.fresh<26).slice(0,6).forEach(c=>{
+  /* On ne projette que ce qui brûle encore. Un feu éteint n'avance pas :
+     le filtre s'appuie sur l'état calculé, pas sur un seuil d'heures répété. */
+  lastCx.filter(c=>c.hull && c.st.key!=="eteint" && c.st.key!=="residuel").slice(0,6).forEach(c=>{
     const pj=projectFire(c, ah);
     if(!pj){ ignored++; return; }
     L.polygon(pj.hullHi,{renderer:cnv,color:"#38bdf8",weight:1.4,dashArray:"7 5",
@@ -4042,7 +4181,8 @@ acv.style.cssText="position:absolute;left:0;top:0;pointer-events:none;z-index:46
 map.getContainer().appendChild(acv);
 const airPane = acv;
 const actx = acv.getContext("2d");
-const AIR = {list:[], prev:[], rescue:[], raf:0, timer:0, at:0, busy:false, mv:0, probes:1};
+const AIR = {list:[], prev:[], rescue:[], raf:0, timer:0, at:0, busy:false, mv:0,
+             probes:1, ecartes:0, trails:new Map()};
 airPane.style.display="none";
 const airOn = () => $("#tg-air").checked;
 
@@ -4050,40 +4190,108 @@ const AC_CAT = {A1:"Avion léger",A2:"Avion moyen",A3:"Gros porteur",A4:"Gros po
   A5:"Très gros porteur",A6:"Haute performance",A7:"Hélicoptère",B1:"Planeur",B2:"Ballon",
   B3:"Parachutiste",B4:"ULM",B6:"Drone / UAV",B7:"Véhicule spatial",
   C1:"Véhicule au sol",C2:"Véhicule de service",C3:"Véhicule au sol"};
-/* Reconnaissance des moyens aériens de secours. Ils sont noyés parmi des
-   centaines de vols commerciaux alors qu'ils sont, eux, directement liés à
-   l'événement en cours : voir trois Canadair tourner dit beaucoup. */
-/* Indicatifs officiels des moyens de secours européens et nord-américains */
-const RESCUE_CALL=/^(PELIC|MILAN|DRAGON|DRAG\d|BOMBARDIER|BOMBER|TANKER|FIREB|FIRE\d|HELITANK|AIRTRACT|SAMU|REGA|RESCUE|RESCU\d|COASTGUARD|CG\d{3,}|LIFEFLIGHT|MEDIC\d|HEMS|SECURITE|CANADAIR|WATERB|SPOTTER|LEADPLANE|AIRATTACK)/i;
-/* Types exclusivement dédiés à la lutte ou au secours */
-const RESCUE_TYPE=/^(CL2T|CL41|CL21|CL15|AT8T|AT802|DH8D|B461|BE20|S64|S61|AS32|EC45|EC35|H145|H500|B412|B212|A139|AS65|H60|S76)$/i;
+/* ============================================================
+   CLASSIFICATION DES AÉRONEFS
+   ------------------------------------------------------------
+   Cette carte ne montre PAS le trafic aérien. Elle montre les
+   MOYENS AÉRIENS ENGAGÉS sur un événement.
+
+   Un Airbus en croisière n'apprend rien sur un incendie ; trois
+   Canadair qui tournent au-dessus d'un massif, énormément. Tout
+   le transport commercial, le fret et l'aviation générale sont
+   donc écartés à la lecture, avant même d'être dessinés — ce qui
+   fait aussi passer le rendu de plusieurs centaines d'appareils
+   à quelques unités.
+
+   Deux catégories sont conservées :
+     ENGAGÉ  lutte contre le feu, secours, sanitaire, garde-côtes,
+             recherche et sauvetage, protection civile
+     RENFORT appareil d'État sur une plateforme réellement utilisée
+             pour l'acheminement de secours ou l'évacuation
+   ============================================================ */
+
+/* Indicatifs radio officiels. Sources : Sécurité civile française (Pélican,
+   Milan, Dragon), Vigili del Fuoco et Protezione Civile italiennes (Drago),
+   protection civile espagnole, rescEU, US Forest Service et CAL FIRE (Tanker,
+   Lead, Air Attack, Helitack), garde-côtes, SAR britannique et irlandais
+   (Rescue), HEMS européens (Christoph en Allemagne, Rega en Suisse, Helimed
+   au Royaume-Uni, SAMU en France). */
+const RESCUE_CALL = new RegExp("^(" + [
+  "PELIC","PELICAN","MILAN","DRAGON","DRAG\\d","MORANE",       /* France */
+  "DRAGO","VVF","PROCIV","IPC\\d",                             /* Italie */
+  "RESCEU","ESCUE",                                            /* mécanisme UE */
+  "TANKER","TNKR","AIRTANKER","LEAD","LEADPLANE","AIRATTACK",
+  "ATTACK","HELITACK","HELITANK","JUMPER","SMOKEY","BIRDDOG",   /* Amérique du Nord */
+  "BOMBER","BOMBARDIER","WATERB","FIREB","FIREBIRD","FIRE\\d",
+  "CANADAIR","AIRTRACT","SPOTTER",
+  "RESCUE","RESCU\\d","SARKING","COASTGUARD","COASTG","CG\\d{3,}","ICEGUARD",
+  "SAMU","HEMS","HELIMED","LIFEFLIGHT","LIFELINE","LIFEGUARD","MEDIC\\d",
+  "AIRMED","AMBULANCE","CHRISTOPH","REGA","ADAC","ANGEL\\d",
+  "SECURITE","SECCIV","CIVPRO","PROTEC"
+].join("|") + ")", "i");
+
+/* Plateformes dont l'usage est quasi exclusivement la lutte ou le secours.
+   Les types à double usage (BE20, S76, DH8D — aussi bien affaires ou lignes
+   régionales) sont volontairement absents : ils ne sont retenus que si
+   l'indicatif ou la description le confirment, sinon ils feraient entrer du
+   trafic ordinaire. */
+const RESCUE_TYPE=/^(CL2T|CL41|CL21|CL15|AT8T|AT802|AT5T|M18|PZL|S64|S61|S58T|H500|B412|B212|B429|AS32|AS3B|H225|EC25|EC45|EC35|EC30|H145|H135|A109|A139|A169|AS65|H60|S70|UH1|H64)$/i;
+
+/* Plateformes d'État utilisées pour l'acheminement de secours et l'évacuation */
+const AID_TYPE=/^(C130|C30J|L382|A400|C295|CN35|C27J|CH47|H47|NH90|EC72|H21[05]M|C17|IL76|AN26|AN12|KC30|A332|C160)$/i;
+
+/* Description constructeur renvoyée par le réseau : le signal le plus fiable
+   quand l'indicatif est absent (« Canadair CL-415 », « Air Tractor AT-802F »). */
+const RESCUE_DESC=/canadair|CL-?[24]15|CL-?215|air ?tractor|AT-?802|dromader|fire ?boss|water ?bomb|fire ?fight|super ?scooper|aircrane|erickson|air ?crane/i;
+const HEMS_DESC=/ambulance|air ?med|medical|rescue|coast ?guard|search and rescue|sar\b|fire|police|patrol/i;
+
+function acFlag(a, bit){ return ((+a.dbFlags||0) & bit) === bit; }
+
 function isRescue(a){
   const f=String(a.flight||"").toUpperCase().replace(/\s+/g,"");
-  if(RESCUE_CALL.test(f)) return true;
-  if(RESCUE_TYPE.test(String(a.t||"").toUpperCase())) return true;
-  /* Le marquage « appareil d'État » du réseau couvre aussi les chasseurs et le
-     transport militaire : à lui seul il ne suffit pas. On l'accepte uniquement
-     combiné à un type d'appareil réellement utilisé pour le secours. */
+  const t=String(a.t||"").toUpperCase();
+  const d=String(a.desc||"");
+  if(f && RESCUE_CALL.test(f)) return true;
+  if(t && RESCUE_TYPE.test(t)) return true;
+  if(d && RESCUE_DESC.test(d)) return true;
+  /* Hélicoptère marqué militaire ou remarquable dont la description évoque le
+     secours : couvre les appareils sans indicatif public. */
+  if(a.cat==="A7" && (a.mil||a.notable) && d && HEMS_DESC.test(d)) return true;
   return false;
 }
-/* Militaire ou appareil d'État, sans être un moyen de secours : signalé
-   discrètement, sans le halo rouge réservé aux secours. */
-function isState(a){
+
+/* Renfort : appareil d'État sur une plateforme d'acheminement ou d'évacuation.
+   Le seul drapeau « militaire » ne suffit pas — il couvre aussi les chasseurs
+   et les vols d'entraînement, qui n'ont rien à faire ici. */
+function isAid(a){
   if(!a.mil) return false;
-  const f=String(a.flight||"").toUpperCase();
-  return !/^[A-Z]{3}\d{2,}$/.test(f);
+  return AID_TYPE.test(String(a.t||"").toUpperCase());
 }
+
 function rescueRole(a){
   const f=String(a.flight||"").toUpperCase();
   const t=String(a.t||"").toUpperCase();
-  if(/^PELIC/.test(f)||/^(CL2T|CL41|CL21)$/.test(t)) return "Bombardier d’eau (Canadair)";
-  if(/^MILAN/.test(f)||t==="DH8D") return "Bombardier d’eau (Dash-8)";
-  if(/^(AT8T|AT802)$/.test(t)||/^AIRTR/.test(f)) return "Avion largueur léger";
-  if(/^DRAGON/.test(f)||/^(AS32|EC45|EC35|H500|B412|B212|S61|S64)$/.test(t)) return "Hélicoptère de secours";
-  if(/^(SAMU|MEDIC|HEMS|LIFE|REGA)/.test(f)) return "Évacuation sanitaire";
-  if(/^(COAST|CG\d|RESCU)/.test(f)) return "Sauvetage / garde-côtes";
-  if(t==="C130"||t==="B461") return "Avion de lutte lourd";
-  return "Appareil d’État ou de secours";
+  const d=String(a.desc||"");
+  if(/^(PELIC|CANADAIR)/.test(f) || /^(CL2T|CL41|CL21|CL15)$/.test(t) || /canadair|CL-?[24]15|CL-?215|super ?scooper/i.test(d))
+    return "Bombardier d’eau amphibie (Canadair)";
+  if(/^MILAN/.test(f)) return "Bombardier d’eau (Dash-8)";
+  if(/^(AT8T|AT802|AT5T|M18|PZL)$/.test(t) || /air ?tractor|dromader|fire ?boss/i.test(d))
+    return "Avion largueur léger";
+  if(/^(TANKER|TNKR|AIRTANKER|BOMBER|BOMBARDIER|WATERB|FIREB|FIREBIRD)/.test(f))
+    return "Avion bombardier d’eau";
+  if(/^(LEAD|AIRATTACK|ATTACK|BIRDDOG|SPOTTER)/.test(f)) return "Avion guide / observation du feu";
+  if(/^(S64|S61|S58T)$/.test(t) || /aircrane|erickson|air ?crane/i.test(d))
+    return "Hélicoptère bombardier d’eau lourd";
+  if(/^(HELITACK|HELITANK|DRAGON|DRAG\d|DRAGO)/.test(f)) return "Hélicoptère de lutte contre le feu";
+  if(/^(SAMU|HEMS|HELIMED|LIFEFLIGHT|LIFELINE|LIFEGUARD|MEDIC|AIRMED|AMBULANCE|CHRISTOPH|REGA|ADAC|ANGEL)/.test(f))
+    return "Évacuation sanitaire";
+  if(/^(COASTGUARD|COASTG|CG\d|ICEGUARD)/.test(f)) return "Garde-côtes";
+  if(/^(RESCUE|RESCU\d|SARKING)/.test(f)) return "Recherche et sauvetage";
+  if(/^(SECURITE|SECCIV|CIVPRO|PROTEC|PROCIV|IPC\d|VVF|RESCEU)/.test(f)) return "Protection civile";
+  if(/^(EC45|EC35|EC30|H145|H135|A109|A139|A169|B429|AS65|S76)$/.test(t)) return "Hélicoptère de secours";
+  if(/^(AS32|AS3B|H225|EC25|H60|S70|UH1|B412|B212|H500|H64)$/.test(t)) return "Hélicoptère lourd de secours";
+  if(AID_TYPE.test(t)) return "Renfort — acheminement ou évacuation";
+  return "Moyen de secours";
 }
 function acKind(a){
   const c=a.cat||"";
@@ -4176,37 +4384,60 @@ function aFrame(){
     const q=map.latLngToContainerPoint([la,lo]);
     if(q.x<-30||q.y<-30||q.x>sz.x+30||q.y>sz.y+30){ a.sx=null; continue; }
     a.sx=q.x; a.sy=q.y;
-    const kind=acKind(a), resc=a.rescue, etat=a.etat;
-    const col=resc ? "#ff2e63" : etat ? "#c9a227" : altColor(a.alt);
-    const size=(kind==="ground"?5:(z<7?5.5:z<10?7:9))*(resc?1.45:etat?1.15:1);
+    const kind=acKind(a), resc=a.rescue, aid=a.aid;
+    const col=resc ? "#ff3d5f" : "#d9a92e";
+
+    /* Trajectoire réellement parcourue, en amont du symbole pour passer dessous.
+       Sur un bombardier d'eau, la trace dessine le circuit entre le point
+       d'écopage et le front : c'est là que se lit le travail en cours. */
+    if(resc && a.trail && a.trail.length>1){
+      actx.save();
+      actx.lineWidth=1.6; actx.lineJoin="round"; actx.lineCap="round";
+      actx.strokeStyle="rgba(255,61,95,.42)";
+      actx.beginPath();
+      let deb=true;
+      for(const p of a.trail){
+        const pt=map.latLngToContainerPoint([p[0],p[1]]);
+        if(deb){ actx.moveTo(pt.x,pt.y); deb=false; } else actx.lineTo(pt.x,pt.y);
+      }
+      actx.lineTo(q.x,q.y);
+      actx.stroke();
+      actx.restore();
+    }
+
+    const size=(z<7?6:z<10?7.5:9.5)*(resc?1.25:1);
     actx.save();
     actx.translate(q.x,q.y);
     actx.globalAlpha = attenue;
-    /* Halo pour repérer instantanément un moyen de secours dans le trafic */
+    /* Cercle de repérage resserré : un anneau fin juste au contour du symbole
+       suffit à le distinguer. L'ancien halo faisait presque quatre fois la
+       taille de l'appareil, avec un remplissage qui empâtait la carte. */
     if(resc){
       actx.beginPath();
-      actx.arc(0,0,size*1.9,0,Math.PI*2);
-      actx.strokeStyle="rgba(255,46,99,.55)"; actx.lineWidth=2; actx.stroke();
-      actx.fillStyle="rgba(255,46,99,.12)"; actx.fill();
-    }else if(etat && z>=7){
-      /* Simple liseré doré : présent mais discret, il ne doit pas être confondu
-         avec un moyen de secours engagé sur un sinistre. */
-      actx.beginPath();
-      actx.arc(0,0,size*1.5,0,Math.PI*2);
-      actx.strokeStyle="rgba(201,162,39,.4)"; actx.lineWidth=1; actx.stroke();
+      actx.arc(0,0,size*1.22,0,Math.PI*2);
+      actx.strokeStyle="rgba(255,61,95,.85)"; actx.lineWidth=1.4; actx.stroke();
     }
     actx.rotate(((a.track||0))*RAD);
     actx.fillStyle=col; actx.strokeStyle=col;
-    actx.shadowColor="rgba(0,0,0,.55)"; actx.shadowBlur=2;
+    actx.shadowColor="rgba(0,0,0,.6)"; actx.shadowBlur=2;
     drawAircraft(actx, kind, size);
     actx.restore();
     actx.globalAlpha=1;
-    /* Les secours sont nommés à tous les niveaux de zoom, les autres seulement de près */
-    if((showLbl || a.rescue) && a.flight){
-      actx.shadowColor="rgba(0,0,0,.9)"; actx.shadowBlur=3;
-      actx.font = a.rescue ? '700 10.5px ui-monospace,monospace' : '600 9.5px ui-monospace,monospace';
-      actx.fillStyle = a.rescue ? "#ff8fa3" : (baseCur==="light"?"#12243d":"#eaf2ff");
-      actx.fillText(a.flight, q.x, q.y+size+12);
+
+    /* Ces appareils sont désormais peu nombreux : on les nomme toujours, avec
+       leur rôle dès que la carte est un peu zoomée. Une liste d'une poignée
+       d'indicatifs lisibles vaut mieux que trois cents points muets. */
+    if(a.flight || a.role){
+      actx.shadowColor="rgba(0,0,0,.92)"; actx.shadowBlur=3;
+      actx.font = resc ? '700 10.5px ui-monospace,monospace' : '600 9.5px ui-monospace,monospace';
+      actx.fillStyle = resc ? "#ff9db0" : "#e6c65c";
+      const nom=a.flight||a.reg||a.hex;
+      actx.fillText(nom, q.x, q.y+size+12);
+      if(showLbl && a.role){
+        actx.font='500 9px system-ui,sans-serif';
+        actx.fillStyle = baseCur==="light" ? "#3a4a63" : "#a9bcd8";
+        actx.fillText(a.role, q.x, q.y+size+23);
+      }
       actx.shadowBlur=0;
       actx.font='600 9.5px ui-monospace,monospace';
     }
@@ -4270,19 +4501,32 @@ async function loadAir(){
     });
     const raw=[...byHex.values()];
     AIR.probes=probes.length;
-    AIR.list=raw.map(a=>({
+    /* `dbFlags` est un champ de bits, pas un booléen : 1 = militaire,
+       2 = remarquable, 4 = adresse masquée, 8 = LADD. Le lire avec `!!`
+       faisait passer pour militaire tout appareil simplement « remarquable ». */
+    const vus_total = raw.length;
+    let brut=raw.map(a=>({
       hex:a.hex, flight:(a.flight||"").trim(), t:a.t||"", desc:a.desc||"",
       reg:a.r||"", cat:a.category||"", la:a.lat, lo:a.lon,
       track:(a.track!=null?a.track:a.true_heading), gs:a.gs||0,
-      alt:a.alt_baro, vs:a.baro_rate, sq:a.squawk, mil:!!a.dbFlags,
+      alt:a.alt_baro, vs:a.baro_rate, sq:a.squawk, dbFlags:a.dbFlags||0,
+      mil:((+a.dbFlags||0)&1)===1, notable:((+a.dbFlags||0)&2)===2,
       seen:a.seen_pos
     })).filter(a=>a.la!=null&&a.lo!=null);
-    AIR.list.forEach(a=>{
+
+    brut.forEach(a=>{
       a.rescue=isRescue(a);
-      a.etat = !a.rescue && isState(a);
-      if(a.rescue) a.role=rescueRole(a);
+      a.aid = !a.rescue && isAid(a);
+      if(a.rescue||a.aid) a.role=rescueRole(a);
       a.at=Date.now();
     });
+
+    /* LE FILTRE. Tout ce qui n'est ni un moyen engagé ni un renfort d'État
+       sort ici : lignes commerciales, fret, aviation générale, planeurs,
+       véhicules au sol. Ils n'apprennent rien sur une catastrophe et noyaient
+       les quelques appareils qui, eux, en disent beaucoup. */
+    AIR.list = brut.filter(a=>a.rescue||a.aid);
+    AIR.ecartes = vus_total - AIR.list.length;
     /* Les appareils volant bas — bombardiers d'eau en particulier — ont une
        réception hachée : ils disparaissent une passe puis reviennent. On les
        conserve jusqu'à 3 minutes (6 pour les secours) au lieu de les effacer,
@@ -4298,7 +4542,31 @@ async function loadAir(){
     AIR.prev=AIR.list.slice();
     AIR.rescue=AIR.list.filter(a=>a.rescue);
     AIR.at=Date.now();
-    setC("c-air", AIR.list.length + (AIR.rescue.length?" · "+AIR.rescue.length+" sec.":""));
+
+    /* Trajectoire réellement parcourue : on mémorise les positions relevées
+       pour chaque appareil engagé. Sur un bombardier d'eau, la trace montre le
+       circuit entre le point d'eau et le front — c'est l'information utile. */
+    const gardeTrace=Date.now()-1800000;
+    AIR.list.forEach(a=>{
+      let tr=AIR.trails.get(a.hex);
+      if(!tr){ tr=[]; AIR.trails.set(a.hex,tr); }
+      const der=tr[tr.length-1];
+      if(!der || Math.abs(der[0]-a.la)>0.0006 || Math.abs(der[1]-a.lo)>0.0006){
+        tr.push([a.la,a.lo,Date.now()]);
+        if(tr.length>60) tr.shift();
+      }
+      a.trail=tr;
+    });
+    /* Purge des traces d'appareils disparus depuis plus de trente minutes */
+    if(AIR.trails.size>140){
+      for(const [h,tr] of AIR.trails){
+        if(!tr.length || tr[tr.length-1][2] < gardeTrace) AIR.trails.delete(h);
+      }
+    }
+
+    const nR=AIR.rescue.length, nA=AIR.list.length-nR;
+    setC("c-air", nR ? (nR+" engagé"+(nR>1?"s":"")+(nA?" · "+nA+" renfort"+(nA>1?"s":""):""))
+                     : (nA ? nA+" renfort"+(nA>1?"s":"") : "aucun"));
     startLoop();
   }catch(e){ setC("c-air","service saturé"); }
   finally{ AIR.busy=false; }
@@ -4330,8 +4598,9 @@ map.on("click", e=>{
   openInfo([best.la,best.lo],"air"+best.hex).setContent(
     `<div class="pp-t"${best.rescue?' style="color:#ff2e63"':''}>${ic(best.rescue?"siren":"plane","x18")}${esc(best.flight||best.reg||best.hex)}</div>
      <div class="pp-cat">${esc(best.desc||best.t||kindFr)}${best.mil?" · appareil d’État":""}</div>
-     ${best.rescue?`<div class="pp-row" style="color:#ff8fa3;font-weight:600">${esc(best.role)}</div>`:""}
-     ${best.etat?`<div class="pp-row" style="color:#e0c14a">Appareil d’État (militaire, gouvernemental ou de calibration)</div>`:""}
+     ${best.rescue?`<div class="pp-row" style="color:#ff9db0;font-weight:600">${esc(best.role)}</div>`:""}
+     ${best.aid?`<div class="pp-row" style="color:#e6c65c;font-weight:600">${esc(best.role)}<br><span style="color:#8fa4cc;font-weight:400">appareil d’État — plateforme d’acheminement ou d’évacuation</span></div>`:""}
+     ${best.trail&&best.trail.length>1?`<div class="pp-row">Trajectoire suivie : <b>${best.trail.length}</b> positions relevées sur ${Math.round((Date.now()-best.trail[0][2])/60000)} min</div>`:""}
      ${best.perdu?`<div class="pp-row" style="color:#ffc46b">Position non confirmée depuis ${Math.round((Date.now()-(best.at||0))/1000)} s — vol à basse altitude, réception intermittente</div>`:""}
      <div class="pp-row">${kindFr}${best.t?` · code <b>${esc(best.t)}</b>`:""}${best.cat?` · cat. ${esc(best.cat)} (${esc(AC_CAT[best.cat]||"?")})`:""}</div>
      ${best.reg?`<div class="pp-row">Immatriculation : <b>${esc(best.reg)}</b></div>`:""}
@@ -4600,7 +4869,7 @@ async function assessSafety(){
   const worst = R.length ? R[0].sev : "ok";
   /* La couche « Ciel » doit être active pour repérer les secours : on le signale */
   if(!$("#tg-air").checked && R.some(r=>r.ic==="flame"))
-    R.push({sev:"ok", ic:"bulb", t:"Activez « Trafic aérien » pour voir les secours",
+    R.push({sev:"ok", ic:"bulb", t:"Activez « Moyens engagés » pour voir les secours en vol",
       d:"Vous verrez alors les bombardiers d’eau et hélicoptères engagés autour de vous.", key:"tip", dist:99});
   SAFE.last = {at:Date.now(), worst, risks:R};
   const b=$("#safebtn");
@@ -4921,7 +5190,7 @@ $("#tg-ice").addEventListener("change",ev=>{
 $("#tg-air").addEventListener("change",ev=>{
   if(ev.target.checked){
     airPane.style.display=""; aResize(); aReposition(); airStart();
-    toast("Trafic aérien activé — la couleur indique l’altitude ; touchez un appareil pour sa fiche.",6000);
+    toast("Moyens aériens engagés — seuls les appareils de lutte, de secours et d’évacuation sont affichés ; le trafic commercial est écarté. Touchez un appareil pour son rôle et sa trajectoire.",7000);
   } else { airPane.style.display="none"; airStop(); }
 });
 $("#tg-cities").addEventListener("change",ev=>{
