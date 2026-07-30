@@ -4218,12 +4218,54 @@ function respawn(p){
 }
 
 /* Interpolation bilinéaire sur les 4 cellules entourant le point */
+/* ---------- Champ de vent mondial pré-calculé ----------
+   Grille de 10° produite par le robot, une fois par heure, depuis une seule
+   adresse IP. Elle sert de SOCLE : le navigateur a toujours un champ complet à
+   afficher, partout, sans interroger Open-Meteo. Ses propres requêtes ne servent
+   plus qu'à affiner autour de ce que l'utilisateur regarde — et quand le plafond
+   horaire est atteint, l'animation continue sur ce socle au lieu de disparaître.
+   C'est le même principe que pour les séismes et les alertes : une requête par
+   cycle depuis l'infrastructure, pas une par visiteur. */
+const WBASE=new Map();
+let wbaseStep=10, wbaseAt=0;
+async function loadWindBase(){
+  try{
+    const d=await preload("wind", 6*3600e3);
+    if(!d || !Array.isArray(d.cells) || !d.cells.length) return false;
+    WBASE.clear();
+    wbaseStep=d.step||10;
+    for(const c of d.cells) WBASE.set(c[0]+"|"+c[1], {u:c[2], v:c[3]});
+    wbaseAt=d.t||0;
+    return true;
+  }catch(e){ return false; }
+}
+/* Interpolation bilinéaire sur le socle, avec repli sur la cellule la plus proche. */
+function baseUV(la, lo){
+  if(!WBASE.size) return null;
+  const st=wbaseStep;
+  const la0=Math.floor(la/st)*st;
+  let lo0=Math.floor(lo/st)*st;
+  const g=(y,x)=>WBASE.get(y+"|"+(((x+540)%360)-180));
+  const c00=g(la0,lo0), c10=g(la0,lo0+st), c01=g(la0+st,lo0), c11=g(la0+st,lo0+st);
+  if(!c00 && !c10 && !c01 && !c11) return null;
+  const tx=(lo-lo0)/st, ty=(la-la0)/st;
+  let u=0,v=0,wt=0;
+  const add=(c,f)=>{ if(c){ u+=c.u*f; v+=c.v*f; wt+=f; } };
+  add(c00,(1-tx)*(1-ty)); add(c10,tx*(1-ty)); add(c01,(1-tx)*ty); add(c11,tx*ty);
+  if(wt>0.15) return [u/wt, v/wt];
+  const c=c00||c10||c01||c11;
+  return c?[c.u,c.v]:null;
+}
+
 function sampleUV(la, lo){
   const st=wind.step;
   const la0=Math.floor(la/st)*st, lo0=Math.floor(lo/st)*st;
   const c00=WCELL.get(wcellKey(st,la0,lo0)),      c10=WCELL.get(wcellKey(st,la0,lo0+st));
   const c01=WCELL.get(wcellKey(st,la0+st,lo0)),   c11=WCELL.get(wcellKey(st,la0+st,lo0+st));
-  if(!c00 && !c10 && !c01 && !c11) return null;
+  /* Aucune mesure fine ici : on retombe sur le socle mondial plutôt que de ne
+     rien renvoyer. La particule est alors tracée avec le vent de grande échelle,
+     ce qui est moins précis mais jamais faux — et surtout jamais vide. */
+  if(!c00 && !c10 && !c01 && !c11) return baseUV(la, lo);
   const tx=(lo-lo0)/st, ty=(la-la0)/st;
   let u=0,v=0,wt=0;
   const add=(c,f)=>{ if(c){ u+=c.u*f; v+=c.v*f; wt+=f; } };
@@ -4234,7 +4276,7 @@ function sampleUV(la, lo){
     const c=WCELL.get(wcellKey(st, la0+dy*st, lo0+dx*st));
     if(c) return [c.u, c.v];
   }
-  return null;
+  return baseUV(la, lo);
 }
 
 /* Échelle des services météorologiques : la couleur s’assombrit et vire au rouge
@@ -4290,6 +4332,15 @@ function windLabel(sp){
 /* Ne demande QUE les cellules absentes du cache */
 async function fetchWind(){
   if(!windOn()) return;
+  /* Le socle mondial d'abord : il est gratuit pour le visiteur (fichier du CDN)
+     et garantit qu'il y a toujours quelque chose à afficher, même si tout le
+     reste échoue. On ne le recharge qu'une fois par heure. */
+  if(!WBASE.size || Date.now()-wbaseAt>3600e3){
+    if(await loadWindBase()){
+      updKmPx(); seedParts(false);
+      wind.pause=false; startLoop();
+    }
+  }
   const b=map.getBounds(), z=map.getZoom();
   const st=windStep();
   wind.step=st;
@@ -4349,7 +4400,13 @@ async function fetchWind(){
        ne s'affiche plus du tout ».
        Les particules ne dépendent pas du réseau : on les sème quand même et
        l'animation continue sur ce qui est en cache. */
-    if(WCELL.size){
+    if(WBASE.size){
+      /* Le socle mondial suffit : on ne parle même pas d'échec à l'utilisateur,
+         il y a un champ de vent complet à l'écran. */
+      setC("c-wind", "mondial 10°");
+      updKmPx(); seedParts(false);
+      wind.pause=false; startLoop();
+    }else if(WCELL.size){
       setC("c-wind", wStale() ? "relevé ancien" : "en cache");
       updKmPx(); seedParts(false);
       wind.pause=false; startLoop();

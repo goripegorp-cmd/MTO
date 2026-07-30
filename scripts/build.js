@@ -203,6 +203,61 @@ async function nws() {
   write("nws.json", { t: now, type: "FeatureCollection", features: f }, f.length + " vigilances");
 }
 
+/* ---------- Champ de vent mondial ----------
+   POURQUOI CETTE TÂCHE EXISTE
+   Open-Meteo plafonne à 5 000 mesures par heure et PAR ADRESSE IP. Chaque
+   visiteur interrogeait le service pour lui-même, et le plafond était atteint en
+   quelques secondes d'ouverture : plus de vent, plus de températures, un écran
+   vide et un message d'erreur. C'est le même raisonnement que pour GDACS ou les
+   séismes — une requête par cycle depuis l'infrastructure, pas une par visiteur.
+
+   Grille de 10°, de -80° à 80° de latitude : 612 points, soit sept requêtes.
+   Résolution volontairement grossière : elle sert de fond de carte du vent à
+   l'échelle mondiale et continentale. Le navigateur continue d'affiner autour de
+   ce que l'utilisateur regarde quand le service le lui permet, mais il a
+   désormais toujours un champ complet à afficher, même à quota épuisé.
+
+   Rafraîchi au maximum une fois par heure : à cette résolution, un champ de vent
+   ne change pas de façon perceptible en quinze minutes, et cela garde la
+   consommation à environ 600 mesures par heure au lieu de 2 400. */
+async function wind() {
+  const STEP = 10, pts = [];
+  for (let la = -80; la <= 80; la += STEP)
+    for (let lo = -180; lo < 180; lo += STEP) pts.push([la, lo]);
+
+  const cells = [];
+  for (let i = 0; i < pts.length; i += 100) {
+    const chunk = pts.slice(i, i + 100);
+    const u = "https://api.open-meteo.com/v1/forecast"
+      + "?latitude=" + chunk.map(p => p[0]).join(",")
+      + "&longitude=" + chunk.map(p => p[1]).join(",")
+      + "&current=wind_speed_10m,wind_direction_10m";
+    try {
+      const d = await get(u, 45000);
+      const arr = Array.isArray(d) ? d : [d];
+      arr.forEach((o, j) => {
+        if (!o || !o.current || !chunk[j]) return;
+        const sp = o.current.wind_speed_10m, di = o.current.wind_direction_10m;
+        if (sp == null || di == null) return;
+        /* On stocke les composantes, pas la direction : le navigateur interpole
+           linéairement entre quatre cellules, ce qui est faux sur un angle
+           (350° et 10° donneraient 180°) mais exact sur des composantes. */
+        const r = (di + 180) * Math.PI / 180;
+        cells.push([chunk[j][0], chunk[j][1],
+          Math.round(sp * Math.sin(r) * 100) / 100,
+          Math.round(sp * Math.cos(r) * 100) / 100]);
+      });
+    } catch (e) {
+      console.log("     bloc " + (i / 100 + 1) + " : " + e.message);
+    }
+    if (i + 100 < pts.length) await new Promise(r => setTimeout(r, 900));
+  }
+  if (cells.length < 200) { console.log("  !  vent : trop peu de points (" + cells.length + "), fichier conservé"); return false; }
+  cells.sort(byKey(c => String(c[0]).padStart(5, "0") + "|" + String(c[1]).padStart(5, "0")));
+  write("wind.json", { t: now, step: STEP, cells }, cells.length + " points de vent (grille " + STEP + "°)");
+  return true;
+}
+
 /* ---------- Périmètres brûlés (Copernicus EFFIS) ----------
    Source la plus lente et la plus instable de toutes. Un contour de zone brûlée
    n'évolue pas d'une minute à l'autre : une fois par jour suffit.
@@ -289,6 +344,26 @@ async function effis() {
      désormais lui-même : si le fichier manque ou dépasse vingt heures, il le
      reconstruit. Une tentative infructueuse n'est pas relancée avant trois heures,
      pour ne pas matraquer un serveur en panne à chaque cycle. */
+  /* Champ de vent : au maximum une fois par heure (voir la tâche pour le
+     détail). On le rattache au cycle rapide plutôt qu'à un déclencheur dédié —
+     le déclencheur quotidien d'EFFIS n'a jamais été honoré par GitHub, la leçon
+     est retenue. */
+  let windAt = prev.windAt || 0;
+  if (only === "fast") {
+    const wf = path.join(OUT, "wind.json");
+    let wAge = Infinity;
+    if (fs.existsSync(wf)) {
+      try { wAge = now - (JSON.parse(fs.readFileSync(wf, "utf8")).t || 0); } catch (e) {}
+    }
+    if (wAge > 50 * 60e3 && now - windAt > 45 * 60e3) {
+      console.log("  …  vent " + (wAge === Infinity ? "absent" : "vieux de " + Math.round(wAge / 60e3) + " min") + " — reconstruction");
+      windAt = now;
+      try { await wind(); } catch (e) { console.log("  x  vent échec : " + e.message); }
+    } else if (fs.existsSync(wf)) {
+      PRESENT.push("wind");
+    }
+  }
+
   let effisTried = prev.effisTried || 0;
   if (only === "fast") {
     const f = path.join(OUT, "effis.json");
@@ -320,10 +395,10 @@ async function effis() {
      `built: Date.now()`, il différait à chaque exécution et garantissait à lui
      seul un commit par cycle, même quand aucune donnée n'avait bougé. */
   const listChanged = JSON.stringify(prev.files || []) !== JSON.stringify(files);
-  const triedChanged = (prev.effisTried || 0) !== effisTried;
+  const triedChanged = (prev.effisTried || 0) !== effisTried || (prev.windAt || 0) !== windAt;
   if (WROTE.length || listChanged || triedChanged) {
     fs.writeFileSync(path.join(OUT, "meta.json"), JSON.stringify({
-      built: now, builtISO: new Date(now).toISOString(), kind: only, files, effisTried
+      built: now, builtISO: new Date(now).toISOString(), kind: only, files, effisTried, windAt
     }));
     console.log("  +  meta.json      " + files.length + " fichiers : " + files.join(", "));
   } else {
