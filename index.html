@@ -191,7 +191,7 @@ header{display:flex;align-items:center;gap:8px;padding:0 10px;height:46px;
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--bd);
   border:1px solid var(--bd);border-radius:5px;overflow:hidden}
 .stat{background:var(--sf2);padding:8px 4px 7px;text-align:center;min-width:0}
-.stat .k{display:block;font:600 9px/1 system-ui,sans-serif;letter-spacing:.09em;
+.stat .k{display:block;font:600 10px/1 system-ui,sans-serif;letter-spacing:.05em;
   text-transform:uppercase;color:var(--t3);margin-bottom:5px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .stat b{font-size:15px;font-weight:700;color:var(--t1)}
@@ -368,6 +368,9 @@ details a:hover{border-bottom-color:#7fc4ea}
   backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
 #drawer.open{display:block;max-height:min(58dvh,420px);overflow-y:auto;overscroll-behavior:contain}
 .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+/* La commande « Frontières et noms » occupe toute la largeur du tiroir :
+   elle ne concourt pas avec les trois fonds, elle s'y ajoute. */
+.tref{grid-column:1/-1;margin-top:7px}
 .tile{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 9px;
   border:1px solid var(--bd);border-radius:5px;background:var(--sf2);color:var(--t2);
   cursor:pointer;font:600 11.5px/1.2 system-ui,sans-serif;text-align:left;
@@ -493,9 +496,11 @@ body.base-light #map{background:#cfd8e3}
    un majorant de la surface touchée. Le dire sur la pastille elle-même, pas
    seulement dans la fiche — c'est la pastille qu'on lit d'un coup d'œil, et
    c'est elle qui trompait. Interlettrage resserré pour tenir dans 34 px. */
-.fbadge i{font:500 7px/1 system-ui,sans-serif;font-style:normal;letter-spacing:.01em;
+/* 8 px et non 7 : c'est le plancher de lisibilite, y compris a la souris.
+   L'interlettrage nul suffit a faire tenir « ha max » dans les 30 px utiles. */
+.fbadge i{font:500 8px/1 system-ui,sans-serif;font-style:normal;letter-spacing:0;
   margin-top:1px;opacity:.85;white-space:nowrap}
-.fbadge.big i{font-size:8px}
+.fbadge.big i{font-size:9px}
 
 /* EN COURS — rond plein qui respire */
 .fbadge.actif{border-radius:50%;animation:fpulse 2.4s ease-in-out infinite}
@@ -791,18 +796,80 @@ body.base-light .leaflet-control-scale-line{background:rgba(255,255,255,.8)!impo
    Les rangées de couches, elles, faisaient déjà 54 px de haut : c'est le label
    entier qui est touché, pas la case, qui ne mesure qu'un pixel.
    Rien de tout cela ne change sur ordinateur, où le pointeur est précis. */
-@media (hover:none) and (pointer:coarse){
+/* Le critère n'est plus le SEUL type de pointeur. `pointer:coarse` n'est pas
+   rapporté par tous les environnements — mesuré : sur un écran de 320 px il
+   renvoyait « pointeur fin », et toute cette règle ne s'appliquait donc pas, y
+   compris là où elle était le plus nécessaire. Un écran de moins de 640 px est
+   un téléphone, quoi que le navigateur raconte sur sa souris. */
+/* `max-height:500px` couvre le TELEPHONE EN PAYSAGE : mesure a 844x390, la
+   largeur depasse 640 px et toutes ces regles cessaient de s'appliquer, alors
+   qu'on tient toujours l'appareil dans la main. Un ecran court est un
+   telephone couche, pas un ordinateur.
+   Le seuil retenu est 899 px, celui que l'application emploie DEJA pour basculer
+   en disposition mobile (le panneau passe en superposition). Une tablette a
+   768 px de large echappait aux deux premiers criteres alors qu'elle se touche
+   au doigt comme un telephone. On ne cree pas un troisieme seuil : on reprend
+   celui qui existe. */
+@media (hover:none) and (pointer:coarse), (max-width:899px), (max-height:500px){
   .tile{min-height:44px}
   .pclose,.cclose{width:40px;height:40px}
   .btnq{min-height:40px}
   .leaflet-control-zoom a{width:40px!important;height:40px!important;line-height:40px!important}
+  /* Boutons de l'entête : 32 px mesurés, soit onze de moins que ce qu'un doigt
+     atteint de façon fiable. Ils commandent le panneau, le globe, le partage,
+     le diagnostic et l'actualisation — on ne peut pas les rater. */
+  .hbtn{width:40px;height:40px}
+  /* Onglets de catégories et titres dépliants : 37 px, juste sous la limite. */
+  .grp{min-height:42px}
+  details > summary{min-height:44px;display:flex;align-items:center}
+  .gl-b{height:40px}
+  .dg-b{min-height:38px}
+  /* Commandes segmentees des Parametres (fond, unites, densite) : mesurees a
+     30 px de haut, c'est le dernier poste sous la limite du doigt. */
+  .segs button{min-height:40px}
+  /* Boutons flottants sur la carte (localisation, « Ma securite ») : 34 px. */
+  #geoloc,#safebtn{width:42px;height:42px}
+}
+
+/* LISIBILITÉ SUR PETIT ÉCRAN. Mesuré à 320 px : 133 éléments sous 11 px, dont
+   des étiquettes à 8 px. En dessous de 11 px, un texte n'est plus lu, il est
+   deviné — et sur une carte de catastrophes, deviner n'est pas acceptable.
+   On ne touche PAS aux grands écrans, où ces tailles sont un choix de densité. */
+@media (max-width:899px), (max-height:500px){
+  .stat .k{font-size:10px;letter-spacing:.04em}
+  /* Pastille agrandie plutot que texte retreci : « ha max » doit rester lisible
+     ET la pastille reste un objet qu'on vise du doigt pour ouvrir la fiche. */
+  .fbadge{width:40px;height:40px}
+  .fbadge.big{width:48px;height:48px}
+  .fbadge i{font-size:9.5px}
+  .fbadge.big i{font-size:10px}
+  .fbadge b{font-size:12px}
+  .fbadge.big b{font-size:14px}
+  .plabel .nm,.plabel b{font-size:11px}
+  .sec{font-size:11px}
+  .row .rn em{font-size:11px}
+  .lg-t,.lghint,.lghint b,.scale-l span{font-size:11px}
+  .pp-foot{font-size:11px}
+  .leaflet-control-scale-line{font-size:11px}
 }
 @media (max-width:420px){
   .tiles{grid-template-columns:repeat(2,1fr)}
   .grp{padding:0 9px;gap:6px}
   .brand .s{display:none}
   .livepill{padding:0 8px}
-  .stat .k{font-size:8.5px;letter-spacing:.05em}
+  /* Cette valeur ecrasait la regle de lisibilite posee plus haut : un bloc
+     media plus etroit vient APRES dans la feuille, il gagne. 10 px est le
+     plancher lisible, et l'interlettrage resserre suffit a faire tenir
+     « CYCLONES » dans la case. */
+  .stat .k{font-size:10px;letter-spacing:.02em}
+}
+/* ECRAN COURT : l'entete et la bande d'onglets mangeaient 84 px sur 390, soit
+   un cinquieme de la hauteur utile. On les resserre pour rendre de la carte,
+   sans descendre sous la limite du doigt. */
+@media (max-height:500px) and (min-width:641px){
+  header{height:42px}
+  #groups{height:34px}
+  .sec{margin-top:6px}
 }
 @media (max-width:340px){
   .tiles{grid-template-columns:1fr}
@@ -1921,6 +1988,10 @@ const LAYERS = [
   {id:"tg-fire",     cat:"feux", icon:"flame",     nm:"Incendies",    full:"Incendies en cours",
    sub:"détectés du ciel, regroupés par sinistre", c:"#ff1744", cnt:"c-complex", on:1,
    drives:["tg-hotspots","tg-complex"]},
+  /* Frontières et noms : commandée depuis le tiroir « Fond », pas depuis la
+     colonne de gauche — c'est un réglage de carte, pas une catégorie
+     d'événement, et la colonne vient d'être ramenée à quinze lignes. */
+  {id:"tg-ref",      cat:"fond", hide:1, on:1},
   {id:"tg-hotspots", cat:"feux", hide:1, cnt:"c-hot", on:1},
   {id:"tg-complex",  cat:"feux", hide:1,             on:1},
 
@@ -2367,6 +2438,55 @@ const BASES = {
     {attribution:"© Esri, Maxar, Earthstar Geographics", maxNativeZoom:19, maxZoom:19,
      updateWhenIdle:true, keepBuffer:2})
 };
+
+/* ---------- FRONTIÈRES ET NOMS DE LIEUX ----------
+   L'imagerie satellite ne porte AUCUNE étiquette : sur ce fond, on ne savait
+   tout simplement pas où l'on se trouvait. Les fonds clair et sombre portent des
+   noms, mais leurs frontières sont si discrètes qu'on ne distingue pas un pays
+   d'un autre.
+
+   La réponse tient en une couche de référence transparente, prévue exactement
+   pour cela, et elle règle le détail progressif toute seule : au niveau du monde
+   elle n'écrit que les pays, en approchant les capitales, puis les grandes
+   villes, puis les communes. C'est la tuile qui décide, pas nous — donc aucun
+   calcul, aucun tri, aucune donnée à charger de notre côté.
+
+   Deux variantes, parce qu'elles ne servent pas la même chose :
+     · sur le satellite, il faut les frontières ET les noms (aucun n'est présent) ;
+     · sur les fonds clair et sombre, les noms sont déjà imprimés dans la tuile —
+       on n'ajoute donc que les frontières, sinon les étiquettes se dédoublent.
+   Poids mesuré : 4 à 25 ko par tuile pour la version complète, 0,9 à 15 ko pour
+   les frontières seules — et rien du tout quand la couche est éteinte. */
+/* Plan dédié, intercalé ENTRE le fond (200) et les tracés de données (400).
+   Sans lui, la couche de référence irait dans le plan des ombres (500) et
+   passerait par-dessus les incendies et les alertes — des étiquettes qui
+   masquent les catastrophes, exactement l'inverse de ce qu'on veut. */
+map.createPane("refPane");
+map.getPane("refPane").style.zIndex = 250;
+map.getPane("refPane").style.pointerEvents = "none";
+
+const REF_LAYERS = {
+  /* Frontières + toponymes, conçue pour se poser sur l'imagerie. */
+  full: L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+    {attribution:"© Esri", maxNativeZoom:19, maxZoom:19, opacity:.95,
+     updateWhenIdle:true, keepBuffer:1, pane:"refPane"}),
+  /* Frontières seules, pour les fonds qui portent déjà leurs noms. */
+  bords: L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Reference_Overlay/MapServer/tile/{z}/{y}/{x}",
+    {attribution:"© Esri", maxNativeZoom:13, maxZoom:19, opacity:.62,
+     updateWhenIdle:true, keepBuffer:1, pane:"refPane"})
+};
+let refCur=null;
+/* Choisit la variante qui convient au fond en cours, et ne refait rien si c'est
+   déjà la bonne — changer de fond ne doit pas redemander toutes les tuiles. */
+function majReference(){
+  const veut = $("#tg-ref") && $("#tg-ref").checked
+    ? (baseCur==="sat" ? "full" : "bords")
+    : null;
+  if(veut===refCur) return;
+  if(refCur) map.removeLayer(REF_LAYERS[refCur]);
+  refCur=veut;
+  if(refCur) REF_LAYERS[refCur].addTo(map);
+}
 let baseCur = "light";
 /* Une tuile qui échoue (réseau mobile instable) est redemandée une fois */
 Object.values(BASES).forEach(t=>{
@@ -2385,6 +2505,9 @@ function setBase(k){
   map.removeLayer(BASES[baseCur]); BASES[k].addTo(map); baseCur=k;
   document.body.classList.toggle("base-light", k==="light");
   document.querySelectorAll('[data-base]').forEach(b=>b.classList.toggle("on", b.dataset.base===k));
+  /* Le satellite n'a aucune étiquette, les autres fonds en ont déjà : la
+     variante de référence change avec le fond. */
+  majReference();
 }
 L.control.zoom({position:"bottomright"}).addTo(map);
 L.control.scale({imperial:false, position:"bottomleft"}).addTo(map);
@@ -6643,7 +6766,23 @@ function buildDrawer(c){
       + `<svg class="ic x18 te" aria-hidden="true"><use href="#i-${i}"/></svg>`
       + `<span class="tl">${n}</span></button>`).join("")}</div>`
       + `<p class="dhint">${c.hint}</p>`;
+    /* La commande « Frontières et noms » vit ici, à côté du choix du fond :
+       c'est un réglage de carte, pas une catégorie d'événement. */
+    const cbr=$("#tg-ref"), actif=!!(cbr&&cbr.checked);
+    dEl.insertAdjacentHTML("beforeend",
+      `<button class="tile tref${actif?" on":""}" type="button" id="btn-ref" aria-pressed="${actif}" style="--c:#96aac4">`
+      + `<svg class="ic x18 te" aria-hidden="true"><use href="#i-layers"/></svg>`
+      + `<span class="tl">Frontières et noms de lieux</span></button>`);
     dEl.querySelectorAll("[data-base]").forEach(b=>b.onclick=()=>setBase(b.dataset.base));
+    const br=$("#btn-ref");
+    if(br) br.onclick=()=>{
+      const c=$("#tg-ref"); if(!c) return;
+      c.checked=!c.checked;
+      br.classList.toggle("on", c.checked);
+      br.setAttribute("aria-pressed", String(c.checked));
+      majReference();
+      toast(`<span class="tmsg">${ic("layers","x16")}Frontières et noms de lieux — ${c.checked?"affichés":"masqués"}</span>`, 2200);
+    };
     return;
   }
   const items=LAYERS.filter(l=>l.cat===c.id && !l.hide), b=map.getBounds();
@@ -7335,6 +7474,9 @@ premierChargement.then(()=>{
     setTimeout(autoOffVides, 6000);
   });
 });
+/* Frontières et noms dès le premier affichage : sans elles, le fond satellite
+   ne porte aucun repère et l'on ne sait pas où l'on regarde. */
+majReference();
 setTimeout(hideLoader,9000);
 
 
