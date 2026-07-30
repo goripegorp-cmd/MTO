@@ -2474,7 +2474,7 @@ async function loadEonet(){
   let u=uWorld;
   if(state.bbox){ const [w,s,e,n]=state.bbox; u+=`&bbox=${w},${n},${e},${s}`; }
   let data=null;
-  const pre=await preload("eonet", 10800000);
+  const pre=await preload("eonet", 6*3600e3);    /* 6 h : ce référentiel a de toute façon 2 à 14 jours de retard */
   if(pre && pre.events){
     /* Format allégé : on le redéploie dans la structure attendue */
     const [w,s0,e0,n0] = state.bbox || [-180,-90,180,90];
@@ -2664,7 +2664,7 @@ async function loadQuakes(){
   let data=null;
   /* Fichier pré-calculé : uniquement pour la vue mondiale sans filtre serré */
   if(!state.bbox && state.qfeed==="45w"){
-    const pre=await preload("quakes", 3600000);
+    const pre=await preload("quakes", 2*3600e3);   /* 2 h : le planificateur GitHub est irrégulier, et USGS reste en repli */
     if(pre && pre.q) data={features: pre.q.map(x=>({
       properties:{mag:x[0], place:x[1], time:x[2], url:x[6]},
       geometry:{coordinates:[x[5], x[4], x[3]]}
@@ -2864,7 +2864,7 @@ async function loadAlerts(){
   }catch(e){}
   if(!state.bbox || state.cc==="us"){
     try{
-      let a = await preload("nws", 5400000);
+      let a = await preload("nws", 3*3600e3);        /* 3 h, pour la même raison */
       if(!a) a = await fetchJSON("https://api.weather.gov/alerts/active?status=actual&severity=Extreme,Severe",
         {"Accept":"application/geo+json"}, 240000);
       for(const f of (a.features||[]).slice(0,120)){
@@ -4271,9 +4271,66 @@ async function initRadar(){
 const AQI=[[20,"#4be3a4","Bonne"],[40,"#a3e635","Correcte"],[60,"#facc15","Moyenne"],[80,"#fb923c","Mauvaise"],[100,"#ef4444","Très mauvaise"],[1e9,"#a21caf","Extrêmement mauvaise"]];
 const aqiInfo=v=>AQI.find(a=>v<=a[0])||AQI[AQI.length-1];
 let aqKey="", aqBox=null;
+/* ---------- Socle mondial de qualité de l'air ----------
+   Même principe que pour le vent : le robot produit une grille de 12° une fois
+   par heure, depuis une seule adresse IP. Le navigateur l'affiche telle quelle
+   en vue large, et n'interroge Open-Meteo que lorsqu'on approche — là où la
+   résolution fine a un sens. Cette couche échouait systématiquement en 400 ou
+   429 dès que le plafond était atteint ; elle a maintenant toujours quelque
+   chose à montrer. */
+const ABASE=[];
+let abaseStep=12, abaseAt=0;
+async function loadAirBase(){
+  try{
+    const d=await preload("air", 6*3600e3);
+    if(!d || !Array.isArray(d.cells) || !d.cells.length) return false;
+    ABASE.length=0;
+    abaseStep=d.step||12;
+    for(const c of d.cells) ABASE.push({la:c[0], lo:c[1], aqi:c[2], pm:c[3]});
+    abaseAt=d.t||0;
+    return true;
+  }catch(e){ return false; }
+}
+function dessineAirSocle(z){
+  const b=map.getBounds().pad(0.2);
+  layers.aq.clearLayers();
+  let bad=0, n=0;
+  for(const c of ABASE){
+    if(c.la<b.getSouth()||c.la>b.getNorth()||c.lo<b.getWest()||c.lo>b.getEast()) continue;
+    const inf=aqiInfo(c.aqi);
+    if(c.aqi>60) bad++;
+    n++;
+    L.circleMarker([c.la,c.lo],{renderer:cnv,radius:z<4?7:10,color:inf[1],weight:1.4,
+      opacity:.7,fillColor:inf[1],fillOpacity:.2})
+      .bindPopup(`<div class="pp-t" style="color:${inf[1]}">${ic("particles","x18")}Air : ${inf[2]}</div>
+        <div class="pp-cat">Indice européen · grille mondiale ${abaseStep}°</div>
+        <div class="pp-row">Indice : <b>${c.aqi}</b> / 100+</div>
+        <div class="pp-row">Particules fines PM2.5 : <b>${c.pm} µg/m³</b></div>
+        <div class="pp-row" style="color:#8fa4cc;font-size:11.5px">Mesure de grande échelle, pré-calculée. Approchez pour obtenir le relevé fin de la zone.</div>
+        <div class="pp-foot">Open-Meteo / CAMS Copernicus${abaseAt?" · relevé il y a "+Math.round((Date.now()-abaseAt)/60000)+" min":""}</div>`,
+        {maxWidth:mqMobile.matches?250:300})
+      .addTo(layers.aq);
+  }
+  setC("c-aq", n ? (bad?bad+" à risque":n+" mondial") : "–");
+  return n>0;
+}
+
 async function loadAQ(){
   if(!$("#tg-aq").checked) return;
   const b=map.getBounds(), z=map.getZoom();
+
+  /* Socle mondial d'abord : gratuit pour le visiteur, et il garantit qu'il y a
+     toujours quelque chose à afficher même si le service refuse. */
+  if(!ABASE.length || Date.now()-abaseAt>3600e3) await loadAirBase();
+
+  /* En vue large, le socle SUFFIT : demander une grille fine pour un continent
+     n'apporterait rien de lisible et consommerait le quota du visiteur. */
+  if(z<6 && ABASE.length){
+    aqKey="socle"; aqBox=null;
+    dessineAirSocle(z);
+    return;
+  }
+
   const sb=snapBox(b, zoomStep(z,4), 0.25);
   if(aqBox && boxCovers(aqBox,b) && layers.aq.getLayers().length) return;
   const key=boxKey(sb);
@@ -4312,7 +4369,13 @@ async function loadAQ(){
         .addTo(layers.aq);
     });
     setC("c-aq", bad?bad+" à risque":arr.length);
-  }catch(e){ setC("c-aq","–"); }
+  }catch(e){
+    /* Le relevé fin a échoué — plafond atteint, par exemple. On retombe sur le
+       socle mondial plutôt que de laisser la couche vide et un « – » opaque. */
+    aqKey=""; aqBox=null;
+    if(ABASE.length) dessineAirSocle(z);
+    else setC("c-aq", omPaused()?"quota météo":"–");
+  }
 }
 
 /* ================= Analyse d’un feu : règle des 30 ================= */

@@ -469,7 +469,12 @@ async function effis() {
       try { age = now - (JSON.parse(fs.readFileSync(f, "utf8")).t || 0); } catch (e) {}
     }
     const stale = age > 20 * 3600e3;
-    const cooled = now - effisTried > 3 * 3600e3;
+    /* Délai de reprise ramené de 3 h à 1 h. Les passages du robot étant eux-mêmes
+       irréguliers — le planificateur de GitHub en écarte beaucoup — un délai de
+       trois heures se cumulait avec ces absences, et le fichier n'a jamais fini
+       par être produit. Une heure laisse largement le serveur EFFIS souffler
+       sans que le rattrapage devienne inatteignable. */
+    const cooled = now - effisTried > 3600e3;
     if (stale && cooled) {
       console.log("  …  effis.json " + (age === Infinity ? "absent" : "vieux de " + Math.round(age / 3600e3) + " h") + " — rattrapage");
       effisTried = now;

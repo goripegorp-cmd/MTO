@@ -9,9 +9,19 @@ name: Donnees
 # Un quart d'heure est une cadence que GitHub tient beaucoup plus régulièrement,
 # et elle reste sous tous les seuils de fraîcheur du client (1 h pour les
 # séismes, le plus exigeant).
+# Mesure sur ce depot meme : avec "*/10", trois passages en vingt heures ; avec
+# "*/15", AUCUN en sept heures. Le planificateur de GitHub est explicitement
+# "best effort" sur les depots publics, et il ecarte massivement les cadences
+# serrees exprimees en */n, qui tombent toutes sur les memes minutes rondes que
+# celles de milliers d'autres depots.
+# On declare donc des minutes DECALEES et explicites plutot qu'un pas : cela
+# evite la bousculade de la minute zero, ce qui ameliore nettement le taux
+# d'execution reel. Cela ne garantit rien -- GitHub ne garantit rien -- d'ou les
+# tolerances d'age relevees cote carte : une donnee un peu ancienne, affichee
+# avec son age, vaut mieux qu'une absence.
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
     inputs:
       slow:
