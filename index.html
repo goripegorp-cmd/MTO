@@ -708,6 +708,70 @@ body.base-light .leaflet-control-scale-line{background:rgba(255,255,255,.8)!impo
 }
 
 /* ============ ADAPTATION PAR TAILLE D'ÉCRAN ============ */
+/* ==================== VUE PLANÈTE (3D) ====================
+   Superposition plein écran, masquée tant qu'on ne l'ouvre pas. Le moteur 3D et
+   la moindre tuile ne sont demandés qu'à la première ouverture : fermée, cette
+   vue ne coûte que quelques balises et ce bloc de style. */
+#globe{position:fixed;inset:0;z-index:1200;display:none;background:#03060e;
+  contain:strict}
+#globe.on{display:block}
+/* Fond étoilé posé DERRIÈRE le canevas. Si le moteur peint un ciel opaque il le
+   recouvre, et rien n'est perdu ; s'il laisse l'espace transparent, les étoiles
+   apparaissent. Quelques dégradés radiaux suffisent — pas d'image à charger. */
+#gl-ciel{position:absolute;inset:0;background:#03060e;
+  background-image:
+    radial-gradient(1.1px 1.1px at 12% 18%, rgba(255,255,255,.55), transparent),
+    radial-gradient(1px 1px at 34% 62%, rgba(255,255,255,.40), transparent),
+    radial-gradient(1.3px 1.3px at 58% 24%, rgba(255,255,255,.60), transparent),
+    radial-gradient(1px 1px at 77% 71%, rgba(255,255,255,.35), transparent),
+    radial-gradient(1.2px 1.2px at 88% 33%, rgba(255,255,255,.50), transparent),
+    radial-gradient(1px 1px at 22% 84%, rgba(255,255,255,.32), transparent),
+    radial-gradient(1.1px 1.1px at 66% 91%, rgba(255,255,255,.42), transparent),
+    radial-gradient(1px 1px at 45% 8%,  rgba(255,255,255,.36), transparent);
+  background-size:520px 420px}
+#gl-canvas{position:absolute;inset:0}
+#gl-canvas canvas{outline:none}
+
+#gl-charge{position:absolute;inset:0;display:none;flex-direction:column;gap:13px;
+  align-items:center;justify-content:center;color:var(--t2);font-size:12.5px;letter-spacing:.02em}
+#globe.load #gl-charge{display:flex}
+.gl-spin{width:26px;height:26px;border:2px solid rgba(150,170,196,.22);
+  border-top-color:#96aac4;border-radius:50%;animation:glturn .9s linear infinite}
+@keyframes glturn{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.gl-spin{animation-duration:2.4s}}
+
+.gl-bar{position:absolute;top:0;left:0;right:0;height:52px;display:flex;align-items:center;
+  gap:7px;padding:0 12px;background:linear-gradient(#03060ecc,#03060e00);
+  padding-top:env(safe-area-inset-top)}
+.gl-sp{flex:1}
+.gl-b{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 11px;
+  background:rgba(10,17,30,.80);border:1px solid rgba(150,170,196,.20);border-radius:8px;
+  color:var(--t2);font:500 11.5px/1 system-ui,sans-serif;cursor:pointer;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.gl-b:hover{border-color:rgba(150,170,196,.42);color:var(--t1)}
+.gl-b[aria-pressed="true"]{border-color:rgba(150,170,196,.55);color:#dce6f6;
+  background:rgba(24,36,56,.86)}
+.gl-x{color:#dce6f6;border-color:rgba(150,170,196,.40)}
+
+.gl-info{position:absolute;left:12px;bottom:12px;max-width:min(340px,calc(100% - 24px));
+  padding:9px 11px;background:rgba(8,13,24,.88);border:1px solid rgba(150,170,196,.18);
+  border-radius:9px;color:var(--t2);font-size:11.5px;line-height:1.5;display:none;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.gl-info.on{display:block}
+.gl-info b{color:#dce6f6}
+.gl-info .gi-t{display:flex;align-items:center;gap:7px;margin-bottom:4px;font-weight:600;color:#dce6f6}
+.gl-info .gi-d{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+.gl-info .gi-a{display:inline-block;margin-top:6px;color:#8fb4e8;cursor:pointer;
+  text-decoration:underline;text-underline-offset:2px}
+
+.gl-hint{position:absolute;right:12px;bottom:12px;max-width:min(300px,calc(100% - 24px));
+  color:var(--t3);font-size:10.5px;line-height:1.5;text-align:right;pointer-events:none}
+@media (max-width:640px){
+  .gl-hint{display:none}
+  .gl-lb{display:none}
+  .gl-info{left:8px;right:8px;bottom:8px;max-width:none}
+}
+
 /* CIBLES TACTILES. Au doigt, un bouton de 30 px se rate une fois sur trois —
    Apple recommande 44 px, Google 48. Mesuré sur un écran de 375 px, restaient
    sous le seuil : les deux boutons de zoom de Leaflet, les deux croix de
@@ -828,6 +892,7 @@ body.base-light .leaflet-control-scale-line{background:rgba(255,255,255,.8)!impo
 <symbol id="i-menu" viewBox="0 0 24 24"><path d="M3.6 6.8h16.8M3.6 12h16.8M3.6 17.2h16.8"/></symbol>
 <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 2.8 3.2 7.2 12 11.6l8.8-4.4z"/><path d="M3.2 12.2 12 16.6l8.8-4.4M3.2 16.8 12 21.2l8.8-4.4"/></symbol>
 <symbol id="i-map" viewBox="0 0 24 24"><path d="M3.2 6.4 9 4l6 2.4 5.8-2.4v13.6L15 20l-6-2.4-5.8 2.4z"/><path d="M9 4v13.6M15 6.4V20"/></symbol>
+<symbol id="i-mountain" viewBox="0 0 24 24"><path d="M2.6 19.4 9.2 7.6l4.1 7.1"/><path d="M11 19.4l4.6-8.2 5.8 8.2z"/><path d="M2.6 19.4h18.8"/></symbol>
 <symbol id="i-link" viewBox="0 0 24 24"><path d="M9.6 14.4 14.4 9.6"/><path d="M11.4 7.2l1.5-1.5a3.9 3.9 0 0 1 5.5 5.5l-1.5 1.5"/><path d="M12.6 16.8l-1.5 1.5a3.9 3.9 0 0 1-5.5-5.5l1.5-1.5"/></symbol>
 <symbol id="i-clipboard" viewBox="0 0 24 24"><rect x="6.4" y="4.2" width="11.2" height="16.4" rx="2"/><path d="M9.6 4.2V3h4.8v1.2"/><path d="M9.4 10h5.2M9.4 13.6h5.2M9.4 17h3.4"/></symbol>
 <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20.4 3.4v4.4H16"/></symbol>
@@ -879,6 +944,8 @@ body.base-light .leaflet-control-scale-line{background:rgba(255,255,255,.8)!impo
   <span class="livepill" title="Heure du dernier cycle de rafraîchissement">
     <i class="pulse" aria-hidden="true"></i><span class="num" id="ch-maj">–</span></span>
 
+  <button class="hbtn" id="globebtn" type="button" aria-label="Vue planète en trois dimensions" title="Vue planète (3D)">
+    <svg class="ic x18" aria-hidden="true"><use href="#i-globe"/></svg></button>
   <button class="hbtn" id="sharebtn" type="button" aria-label="Copier le lien de cette vue" title="Partager la vue">
     <svg class="ic x18" aria-hidden="true"><use href="#i-link"/></svg></button>
   <button class="hbtn" id="diagbtn" type="button" aria-label="Diagnostic et journal des erreurs" title="Diagnostic">
@@ -886,6 +953,27 @@ body.base-light .leaflet-control-scale-line{background:rgba(255,255,255,.8)!impo
   <button class="hbtn" id="reload" type="button" aria-label="Actualiser toutes les données" title="Actualiser">
     <svg class="ic x18" aria-hidden="true"><use href="#i-refresh"/></svg></button>
 </header>
+
+<!-- VUE PLANÈTE. Rien n'est chargé tant qu'on ne l'ouvre pas : ni le moteur 3D,
+     ni une seule tuile. Fermée, elle ne coûte que ce bloc de balises. -->
+<div id="globe" role="dialog" aria-label="Vue planète en trois dimensions" aria-hidden="true">
+  <div id="gl-ciel" aria-hidden="true"></div>
+  <div id="gl-canvas"></div>
+  <div id="gl-charge"><span class="gl-spin" aria-hidden="true"></span><span>Préparation de la planète…</span></div>
+  <div class="gl-bar">
+    <button class="gl-b gl-x" id="gl-close" type="button" aria-label="Revenir à la carte">
+      <svg class="ic x18" aria-hidden="true"><use href="#i-cross"/></svg><span>Carte</span></button>
+    <div class="gl-sp"></div>
+    <button class="gl-b" id="gl-spin" type="button" aria-pressed="true" title="Rotation automatique">
+      <svg class="ic x16" aria-hidden="true"><use href="#i-refresh"/></svg><span class="gl-lb">Rotation</span></button>
+    <button class="gl-b" id="gl-night" type="button" aria-pressed="true" title="Ligne du jour et de la nuit">
+      <svg class="ic x16" aria-hidden="true"><use href="#i-moon"/></svg><span class="gl-lb">Nuit</span></button>
+    <button class="gl-b" id="gl-relief" type="button" aria-pressed="false" title="Relief en trois dimensions">
+      <svg class="ic x16" aria-hidden="true"><use href="#i-mountain"/></svg><span class="gl-lb">Relief</span></button>
+  </div>
+  <div class="gl-info" id="gl-info"></div>
+  <div class="gl-hint" id="gl-hint">Faites tourner la planète · zoomez pour approcher — au-delà du niveau régional, la carte détaillée prend le relais</div>
+</div>
 
 <div id="diag" role="dialog" aria-label="Diagnostic">
   <div class="dg-top">
@@ -2525,6 +2613,92 @@ const CATFR = {drought:"Sécheresse", dustHaze:"Poussière / brume de sable", ea
   snow:"Épisode neigeux", tempExtremes:"Températures extrêmes", waterColor:"Coloration des eaux"};
 const GTYPE = {EQ:"Séisme", TC:"Cyclone tropical", FL:"Inondation", VO:"Volcan", DR:"Sécheresse", WF:"Incendie", TS:"Tsunami"};
 const GLVL = {Red:["ROUGE","#ff2e63"], Orange:["ORANGE","#ff9f43"], Green:["verte","#4be3a4"]};
+/* ---------- LIEUX DES SÉISMES, EN FRANÇAIS ----------
+   L'USGS libelle ses séismes en anglais et selon un gabarit fixe :
+   « 51 km ESE of Murghob, Tajikistan », « South of the Fiji Islands »,
+   « off the coast of Oaxaca, Mexico », « Vanuatu region ».
+   Sur une carte lue en français, « 51 km ESE of » se lit mal et « ESE » n'a
+   aucun sens pour qui n'a pas l'habitude des roses des vents anglaises — ESE
+   est d'ailleurs identique en français, mais SSW, SW, WSW, W, WNW et NW ne le
+   sont PAS : ils s'écrivent SSO, SO, OSO, O, ONO et NO. Un lecteur français
+   pouvait donc lire « ouest » là où il fallait comprendre... « ouest » aussi,
+   mais écrit W. Autant tout mettre en toutes lettres.
+   Le nom propre du lieu n'est jamais touché : seuls le gabarit, la direction et
+   le pays final sont traduits. Ce qui ne correspond à rien est rendu tel quel. */
+const DIR_FR={N:"au nord",NNE:"au nord-nord-est",NE:"au nord-est",ENE:"à l’est-nord-est",
+  E:"à l’est",ESE:"à l’est-sud-est",SE:"au sud-est",SSE:"au sud-sud-est",S:"au sud",
+  SSW:"au sud-sud-ouest",SW:"au sud-ouest",WSW:"à l’ouest-sud-ouest",W:"à l’ouest",
+  WNW:"à l’ouest-nord-ouest",NW:"au nord-ouest",NNW:"au nord-nord-ouest"};
+/* Les points d'ancrage de l'USGS sont souvent des archipels, que la table ISO
+   des PAYS ne connaît évidemment pas. */
+const ILES_FR={
+  "fiji islands":"îles Fidji", "kermadec islands":"îles Kermadec",
+  "loyalty islands":"îles Loyauté", "solomon islands":"îles Salomon",
+  "aleutian islands":"îles Aléoutiennes", "andreanof islands":"îles Andreanof",
+  "rat islands":"îles Rat", "fox islands":"îles Fox",
+  "south sandwich islands":"îles Sandwich du Sud",
+  "balleny islands":"îles Balleny", "auckland islands":"îles Auckland",
+  "bonin islands":"îles Bonin", "ryukyu islands":"îles Ryūkyū",
+  "volcano islands":"îles Volcano", "mariana islands":"îles Mariannes",
+  "canary islands":"îles Canaries", "azores islands":"Açores",
+  "aegean sea":"mer Égée", "sea of okhotsk":"mer d’Okhotsk",
+  "banda sea":"mer de Banda", "molucca sea":"mer des Moluques",
+  "celebes sea":"mer de Célèbes", "philippine islands":"îles Philippines"
+};
+/* « de » correct en français : élision devant voyelle, contraction devant un
+   pluriel. « au sud de Fiji Islands » et « de Anchorage » sont des fautes que
+   personne n'écrirait à la main. */
+function dePlace(n){
+  const t=String(n||"").trim();
+  if(!t) return "";
+  if(/^(îles|les|monts)\s/i.test(t)) return "des "+t.replace(/^les\s+/i,"");
+  if(/^la\s/i.test(t))  return "de "+t;
+  if(/^le\s/i.test(t))  return "du "+t.replace(/^le\s+/i,"");
+  if(/^[aeiouyàâäéèêëîïôöùûüh]/i.test(t)) return "d’"+t;
+  return "de "+t;
+}
+const CARD_FR={north:"au nord",south:"au sud",east:"à l’est",west:"à l’ouest",
+  northeast:"au nord-est",northwest:"au nord-ouest",
+  southeast:"au sud-est",southwest:"au sud-ouest"};
+function lieuSeismeFR(p){
+  const s=String(p||"").trim();
+  if(!s) return "";
+  /* CHAQUE segment séparé par une virgule est traduit, pas seulement le dernier.
+     « Kermadec Islands, New Zealand » ne devenait « Kermadec Islands,
+     Nouvelle-Zélande » que parce que je m'arrêtais au pays final. Un nom propre
+     non reconnu reste tel quel — on ne traduit jamais au jugé. */
+  const nomFR = t => {
+    const n=t.trim(), k=n.toLowerCase();
+    const direct = ILES_FR[k] || PAYS_ALIAS[k] || PAYS_FR.get(k);
+    if(direct) return direct;
+    /* Repli général : « X Islands » est un archipel, « îles X » en français.
+       Évite d'avoir à énumérer les quelques centaines qui existent. */
+    const m = n.match(/^(.+?)\s+Islands?$/i);
+    return m ? "îles "+m[1] : n;
+  };
+  const lieu = t => t.split(/\s*,\s*/).filter(Boolean).map(nomFR).join(", ");
+  let m;
+  if((m=s.match(/^(\d+(?:[.,]\d+)?)\s*km\s+([NSEWnsew]{1,3})\s+of\s+(.+)$/))){
+    const d=DIR_FR[m[2].toUpperCase()];
+    const km=parseFloat(m[1].replace(",","."));
+    /* L'USGS donne des kilomètres ENTIERS : « 8,0 km » ajouterait une décimale
+       que la source ne revendique pas. En lecture impériale la conversion n'est
+       plus entière, on repasse donc par le formateur habituel. */
+    const dist = (!isImp() && Number.isInteger(km)) ? nf(km)+NB+"km" : fmtD(km);
+    return "à "+dist+(d?" "+d:"")+" "+dePlace(lieu(m[3]));
+  }
+  if((m=s.match(/^off\s+the\s+(?:east|west|north|south)?\s*coast\s+of\s+(?:the\s+)?(.+)$/i)))
+    return "au large "+dePlace(lieu(m[1]));
+  if((m=s.match(/^(north|south|east|west|northeast|northwest|southeast|southwest)\s+of\s+(?:the\s+)?(.+)$/i)))
+    return (CARD_FR[m[1].toLowerCase()]||"")+" "+dePlace(lieu(m[2]));
+  /* « Iran-Iraq border region » : les deux pays sont joints par un tiret, pas
+     par une virgule. On traduit donc de part et d'autre du tiret. */
+  if((m=s.match(/^(.+?)\s+border\s+region$/i)))
+    return "zone frontalière — "+m[1].split(/\s*-\s*/).map(x=>lieu(x)).join(" / ");
+  if((m=s.match(/^(.+?)\s+region$/i)))          return "région "+dePlace(lieu(m[1]));
+  return lieu(s);
+}
+
 /* Ce que le repère GDACS localise VRAIMENT, type par type. GDACS ne fournit
    qu'un point : selon l'événement, ce point ne désigne pas du tout la même
    chose, et un cyclone n'est pas « à » l'endroit de son repère au sens où un
@@ -2949,6 +3123,8 @@ async function loadQuakes(){
    M2,5 sans conséquence. On montre donc les plus forts d'abord, et le détail
    n'arrive qu'en approchant. */
 let qRaw=[];
+/* Dernières alertes officielles reçues, mémorisées pour la vue planète. */
+let lastAlerts=[];
 function quakeMinMag(z){
   if(z<3)   return 5.5;   /* vue mondiale : seuls les séismes marquants */
   if(z<4.5) return 4.8;
@@ -2980,7 +3156,7 @@ function drawQuakes(){
     const [col,txt]=magInfo(m);
     L.circleMarker([lat,lon],{renderer:cnv,radius:Math.max(4,(m-1.8)*3),color:col,weight:2,opacity:.95,fillColor:col,fillOpacity:.5})
       .bindPopup(`<div class="pp-t">${ic("quake","x18")}Séisme — magnitude ${m.toFixed(1)}</div>
-        <div class="pp-cat">${esc(f.properties.place||"Localisation en cours")}</div>
+        <div class="pp-cat">${esc(lieuSeismeFR(f.properties.place)||"Localisation en cours")}</div>
         <div class="pp-row">Survenu le <b>${fmtDate(f.properties.time)}</b></div>
         <div class="pp-row">Profondeur : <b>${fmtD(depth)}</b>${depth<70?" (peu profond → plus ressenti en surface)":""}</div>
         <div class="pp-desc">${txt}</div>
@@ -3051,6 +3227,9 @@ async function loadAlerts(){
         "Alertes officielles GDACS indisponibles : le fichier pre-calcule manque ou depasse 12 h. Le domaine gdacs.org interdit l'acces direct depuis un navigateur, il n'y a pas de repli possible.");
       setC("c-alerts","indispo");
     } else {
+      /* Mémorisé pour la vue planète, qui porte les mêmes alertes sur la sphère
+         sans réémettre la moindre requête. */
+      lastAlerts = pre.f;
       const age=pre.t?Math.round((Date.now()-pre.t)/60000):null;
       /* Détail progressif, comme pour les feux et les séismes. En vue large on
          ne montre que les alertes OFFICIELLEMENT graves : sur 341 alertes, 329
@@ -7066,6 +7245,366 @@ premierChargement.then(()=>{
   });
 });
 setTimeout(hideLoader,9000);
+
+
+/* ==================== VUE PLANÈTE (3D) ====================
+   Une VRAIE sphère, pas un fond d'écran : projection globe de MapLibre, imagerie
+   satellite Esri jusqu'au bâtiment (vérifié : tuiles réelles au niveau 19 sur
+   Paris, Manhattan et le mont Blanc), relief facultatif à partir des tuiles
+   d'élévation ouvertes d'AWS.
+
+   POURQUOI UN SECOND MOTEUR PLUTÔT QUE DE REMPLACER LEAFLET.
+   Toute la carte — cinquante couches, tracés, fiches, analyses — est écrite pour
+   Leaflet. La réécrire sur MapLibre serait un chantier de plusieurs mois pour un
+   résultat identique en deux dimensions. On ajoute donc une VUE, pas un socle :
+   le globe répond à « où, sur la planète », la carte répond à « quoi, ici ». Dès
+   qu'on approche, le globe passe la main à la carte, qui sait tout faire.
+
+   CE QUE ÇA COÛTE QUAND ON NE S'EN SERT PAS : rien. Ni le moteur (248 ko), ni
+   une tuile, ni un pixel de mémoire vidéo. Tout est demandé à la première
+   ouverture, et la mémoire vidéo est rendue à la fermeture.
+
+   La sphère règle aussi le problème du vide : on ne peut pas sortir d'une
+   planète. Il n'y a plus de noir sous l'Antarctique, il y a l'Antarctique. */
+const ML_JS ="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js";
+const ML_CSS="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.css";
+const GL_ZOOM_PASSAGE = 7;      /* au-delà, la carte détaillée reprend la main */
+
+let glMap=null, glPret=null, glOuvert=false, glRaf=0, glDernierGeste=0, glRotation=true, glVeille=0;
+
+/* Le moteur 3D exige WebGL. Sans lui, on ne propose pas un bouton qui échoue. */
+const GL_DISPO = (()=>{ try{
+  const c=document.createElement("canvas");
+  return !!(window.WebGLRenderingContext &&
+    (c.getContext("webgl2")||c.getContext("webgl")||c.getContext("experimental-webgl")));
+}catch(e){ return false; } })();
+
+function chargeMapLibre(){
+  if(glPret) return glPret;
+  glPret = new Promise((ok,ko)=>{
+    const l=document.createElement("link");
+    l.rel="stylesheet"; l.href=ML_CSS; document.head.appendChild(l);
+    const s=document.createElement("script");
+    s.src=ML_JS; s.async=true;
+    s.onload=()=> window.maplibregl ? ok(window.maplibregl) : ko(new Error("moteur illisible"));
+    s.onerror=()=> ko(new Error("moteur inaccessible"));
+    document.head.appendChild(s);
+  });
+  glPret.catch(()=>{ glPret=null; });   /* un échec ne doit pas être définitif */
+  return glPret;
+}
+
+/* ---------- Ligne du jour et de la nuit ----------
+   Position du Soleil par les formules astronomiques usuelles (précision de
+   l'ordre de la minute d'arc, très au-delà de ce qu'exige un tracé à l'écran).
+   Ce n'est pas un ornement : sur un globe, voir qu'un incendie brûle en pleine
+   nuit dit quelque chose — l'activité retombe la nuit, les moyens aériens sont
+   cloués au sol. */
+function positionSoleil(ms){
+  const jj = ms/86400000 + 2440587.5, n = jj - 2451545;
+  const L = (280.460 + 0.9856474*n) % 360;
+  const g = ((357.528 + 0.9856003*n) % 360) * RAD;
+  const lam = (L + 1.915*Math.sin(g) + 0.020*Math.sin(2*g)) * RAD;
+  const eps = (23.439 - 0.0000004*n) * RAD;
+  const dec = Math.asin(Math.sin(eps)*Math.sin(lam));
+  const ra  = Math.atan2(Math.cos(eps)*Math.sin(lam), Math.cos(lam));
+  const gmst = ((18.697374558 + 24.06570982441908*n) % 24 + 24) % 24;
+  let lon = ra/RAD - gmst*15;
+  lon = ((lon % 360) + 540) % 360 - 180;
+  return {lat: dec/RAD, lon};
+}
+function polygoneNuit(){
+  const s = positionSoleil(Date.now());
+  /* Aux équinoxes la déclinaison passe par zéro et la tangente explose : on la
+     borne, l'écart visible est inférieur au pixel. */
+  let dec = s.lat*RAD;
+  if(Math.abs(dec) < 1e-3) dec = dec<0 ? -1e-3 : 1e-3;
+  const pts=[];
+  for(let lon=-180; lon<=180; lon+=2){
+    const h=(lon - s.lon)*RAD;
+    let lat = Math.atan(-Math.cos(h)/Math.tan(dec))/RAD;
+    pts.push([lon, Math.max(-89.9, Math.min(89.9, lat))]);
+  }
+  /* On referme sur le pôle plongé dans la nuit : celui opposé au Soleil. */
+  const pole = dec>0 ? -90 : 90;
+  pts.push([180, pole], [-180, pole], [pts[0][0], pts[0][1]]);
+  return {type:"FeatureCollection", features:[{type:"Feature", properties:{},
+    geometry:{type:"Polygon", coordinates:[pts]}}]};
+}
+
+/* ---------- Les évènements, portés sur la sphère ----------
+   On réutilise ce que la carte a déjà calculé : aucune requête supplémentaire
+   n'est émise pour ouvrir le globe. */
+function glDonnees(){
+  const f=[];
+  for(const c of (lastCx||[])){
+    const bk=FIRE_BUCKET[c.st.key]||FIRE_BUCKET.stable;
+    f.push({type:"Feature", properties:{
+        g:"feu", col:bk.col, r: bk.k==="actif" ? Math.min(15, 4+Math.sqrt(c.burned*100)/7) : 4,
+        nm:(bk.k==="zombie"?"Zone brûlée":"Incendie")+" — au plus "+fmtA(c.burned*100),
+        d:(bk.k==="zombie"?"Plus aucun front détecté du ciel. Le sol a brûlé, une reprise reste possible."
+                          :"En cours. "+nf(c.frp)+" MW rayonnés, "+c.n+" points chauds.")
+           +" Dernière détection "+fmtAge(c.fresh)+".",
+        la:c.c[0], lo:c.c[1]},
+      geometry:{type:"Point", coordinates:[c.c[1], c.c[0]]}});
+  }
+  /* qRaw contient les entités GeoJSON brutes de l'USGS, pas des objets aplatis :
+     magnitude et lieu sont dans properties, la profondeur est la TROISIÈME
+     coordonnée de la géométrie. */
+  for(const q of (qRaw||[])){
+    const m=q.properties&&q.properties.mag;
+    const c=q.geometry&&q.geometry.coordinates;
+    if(m==null || !c) continue;
+    if(m<4.5) continue;            /* sous 4,5 la sphère devient illisible */
+    const [lon,lat,prof]=c;
+    f.push({type:"Feature", properties:{
+        g:"seisme", col: m>=6.5?"#ff1744":m>=5.5?"#ff9f43":"#ffd166",
+        r: 3+(m-4)*2.4,
+        nm:"Séisme de magnitude "+nf(m,1),
+        d:(q.properties.place?esc(lieuSeismeFR(q.properties.place))+". ":"")
+          +"Profondeur "+fmtD(prof||0)+", "+fmtAge((Date.now()-q.properties.time)/36e5)+".",
+        la:lat, lo:lon},
+      geometry:{type:"Point", coordinates:[lon, lat]}});
+  }
+  for(const a of (lastAlerts||[])){
+    if(a.a!=="Red" && a.a!=="Orange") continue;
+    const clos=!a.cur, col=clos?"#8494ad":(a.a==="Red"?"#ff2e63":"#ff9f43");
+    f.push({type:"Feature", properties:{
+        g:"alerte", col, r: clos?4:(a.a==="Red"?9:7),
+        nm:gdacsTitreFR(a)+(clos?" — événement clos":""),
+        d:clos?"Cet événement a été clos par les autorités qui l’avaient déclaré. Il reste affiché à titre d’historique."
+              :"Alerte "+(a.a==="Red"?"rouge":"orange")+" en cours, graduée par l’ONU et la Commission européenne.",
+        la:a.c[0], lo:a.c[1]},
+      geometry:{type:"Point", coordinates:[a.c[1], a.c[0]]}});
+  }
+  return {type:"FeatureCollection", features:f};
+}
+
+function glStyle(){
+  return {
+    version:8,
+    /* Pas de champ `glyphs` du tout. La spécification exige une CHAÎNE quand il
+       est présent ; y mettre null fait échouer la validation du style. Aucune
+       couche ne porte de texte ici, donc l'omettre est à la fois correct et
+       économe — pas une requête de police vers un serveur tiers. */
+    projection:{type:"globe"},
+    sky:{"sky-color":"#0a1730", "horizon-color":"#2a4a78",
+         "fog-color":"#8fb4e8", "fog-ground-blend":0.62,
+         "horizon-fog-blend":0.55, "sky-horizon-blend":0.72,
+         "atmosphere-blend":["interpolate",["linear"],["zoom"], 0,1, 6,0.72, 9,0]},
+    sources:{
+      sat:{type:"raster", tileSize:256, maxzoom:19,
+        tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+        attribution:"© Esri, Maxar, Earthstar Geographics"},
+      nuit:{type:"geojson", data:polygoneNuit()},
+      ev:{type:"geojson", data:{type:"FeatureCollection", features:[]}}
+    },
+    layers:[
+      {id:"sat", type:"raster", source:"sat"},
+      /* La nuit est un voile, pas un masque : on doit continuer à distinguer les
+         continents et les incendies au travers. */
+      {id:"nuit", type:"fill", source:"nuit",
+       paint:{"fill-color":"#040a16", "fill-opacity":0.46}},
+      {id:"ev-halo", type:"circle", source:"ev",
+       paint:{"circle-radius":["+",["get","r"],5], "circle-color":["get","col"],
+              "circle-opacity":0.16, "circle-blur":0.55}},
+      {id:"ev", type:"circle", source:"ev",
+       paint:{"circle-radius":["get","r"], "circle-color":["get","col"],
+              "circle-opacity":0.88, "circle-stroke-width":1.1,
+              "circle-stroke-color":"rgba(6,11,22,.85)"}}
+    ]
+  };
+}
+
+function glFiche(p){
+  const b=$("#gl-info"); if(!b) return;
+  b.innerHTML = `<div class="gi-t"><span class="gi-d" style="background:${esc(p.col)}"></span>${esc(p.nm)}</div>`
+    + `<div>${p.d}</div>`
+    + `<span class="gi-a" data-go="${p.la},${p.lo}">Voir sur la carte détaillée</span>`;
+  b.classList.add("on");
+}
+function glFermeFiche(){ const b=$("#gl-info"); if(b) b.classList.remove("on"); }
+
+/* Rotation lente au repos. Elle s'arrête dès qu'on touche la planète et repart
+   après quelques secondes d'immobilité — et jamais si le système demande à
+   limiter les animations. */
+function glBoucle(){
+  glRaf=0;
+  if(!glOuvert || !glMap) return;
+  const calme = Date.now()-glDernierGeste > 3500;
+  if(glRotation && calme && !glMap.isMoving() && glMap.getZoom()<3.4
+     && !matchMedia("(prefers-reduced-motion: reduce)").matches){
+    const c=glMap.getCenter();
+    glMap.setCenter([c.lng-0.045, c.lat]);
+  }
+  glRaf=requestAnimationFrame(glBoucle);
+}
+
+async function ouvreGlobe(){
+  if(!GL_DISPO){
+    toast(`<span class="tmsg">${ic("warning","x16")}Votre navigateur n’expose pas l’accélération 3D (WebGL). La vue planète ne peut pas s’afficher — la carte reste entièrement utilisable.</span>`, 7000);
+    return;
+  }
+  const box=$("#globe");
+  box.classList.add("on","load");
+  box.setAttribute("aria-hidden","false");
+  closeGroup();
+  let ml;
+  try{ ml=await chargeMapLibre(); }
+  catch(e){
+    box.classList.remove("on","load"); box.setAttribute("aria-hidden","true");
+    toast(`<span class="tmsg">${ic("warning","x16")}Le moteur 3D n’a pas pu être chargé (${esc(e.message||"réseau")}). La carte reste entièrement utilisable.</span>`, 7000);
+    if(window.__diagPush) window.__diagPush("RÉSEAU","Moteur 3D indisponible : "+(e.message||""));
+    return;
+  }
+  glOuvert=true; glDernierGeste=Date.now();
+  const c=map.getCenter();
+  /* On entre sur le globe là où la carte regardait, mais reculé : le propos de
+     cette vue est l'ensemble, pas le détail. */
+  const zEntree=Math.min(map.getZoom(), 3.2);
+
+  if(!glMap){
+    glMap=new ml.Map({
+      container:"gl-canvas", style:glStyle(),
+      center:[c.lng, c.lat], zoom:zEntree, minZoom:0.6, maxZoom:19,
+      attributionControl:{compact:true}, dragRotate:true, pitchWithRotate:true,
+      /* Une planète n'a pas de bord : le rebouclage est naturel ici. */
+      renderWorldCopies:false, maxPitch:72, fadeDuration:180
+    });
+    glMap.on("load", ()=>{
+      clearTimeout(glVeille); glVeille=0;
+      $("#globe").classList.remove("load");
+      try{ glMap.setProjection({type:"globe"}); }catch(e){}
+      glMaj();
+      glMap.on("click","ev", ev=>{
+        const f=ev.features&&ev.features[0]; if(!f) return;
+        glFiche(f.properties);
+        glMap.easeTo({center:f.geometry.coordinates, duration:700});
+      });
+      glMap.on("click", ev=>{
+        const f=glMap.queryRenderedFeatures(ev.point,{layers:["ev"]});
+        if(!f.length) glFermeFiche();
+      });
+      glMap.on("mouseenter","ev", ()=>{ glMap.getCanvas().style.cursor="pointer"; });
+      glMap.on("mouseleave","ev", ()=>{ glMap.getCanvas().style.cursor=""; });
+      /* PASSAGE DE RELAIS. Au-delà du niveau régional, le globe n'a plus rien à
+         apporter que la carte ne fasse mieux : elle porte les fiches, les
+         périmètres, les analyses. On bascule plutôt que d'entretenir deux vues
+         concurrentes qui divergeraient. */
+      glMap.on("zoomend", ()=>{
+        if(!glOuvert || glMap.getZoom() < GL_ZOOM_PASSAGE) return;
+        const k=glMap.getCenter(), z=Math.round(glMap.getZoom());
+        fermeGlobe();
+        map.setView([k.lat, k.lng], Math.max(GL_ZOOM_PASSAGE, Math.min(18, z)));
+        toast(`<span class="tmsg">${ic("map","x16")}La carte détaillée prend le relais à ce niveau de zoom.</span>`, 3600);
+      });
+      ["dragstart","zoomstart","rotatestart","pitchstart","mousedown","touchstart","wheel"]
+        .forEach(e=>glMap.on(e, ()=>{ glDernierGeste=Date.now(); }));
+      if(!glRaf) glRaf=requestAnimationFrame(glBoucle);
+    });
+    /* GARDE-FOU. Un style qui n'aboutit pas laisserait tourner le rond de
+       chargement indéfiniment, sans un mot d'explication — la pire des issues.
+       Douze secondes suffisent très largement, même sur un réseau lent : au-delà,
+       on referme et on le dit. Cela couvre aussi le cas d'un onglet qui ne
+       compose aucune image (fenêtre masquée), où le moteur ne rend jamais. */
+    glVeille=setTimeout(()=>{
+      if(!glOuvert || !glMap) return;
+      let charge=false; try{ charge=glMap.isStyleLoaded(); }catch(_){}
+      if(charge) return;
+      fermeGlobe();
+      toast(`<span class="tmsg">${ic("warning","x16")}La vue planète n’a pas pu s’initialiser (accélération 3D indisponible ou onglet en arrière-plan). La carte reste entièrement utilisable.</span>`, 7000);
+      if(window.__diagPush) window.__diagPush("ALERTE","Vue planete : style non charge apres 12 s, fermeture.");
+    }, 12000);
+    glMap.on("error", e=>{
+      /* Une tuile manquante ne doit pas remplir le journal : c'est banal et sans
+         conséquence sur une sphère qu'on fait tourner vite. */
+      const m=String(e&&e.error&&e.error.message||"");
+      if(/tile|abort|Failed to fetch/i.test(m)) return;
+      if(window.__diagPush) window.__diagPush("RÉSEAU","Vue planète : "+m);
+    });
+  }else{
+    glMap.jumpTo({center:[c.lng, c.lat], zoom:zEntree});
+    $("#globe").classList.remove("load");
+    glMaj();
+    if(!glRaf) glRaf=requestAnimationFrame(glBoucle);
+  }
+  setTimeout(()=>{ if(glMap) glMap.resize(); }, 60);
+}
+
+/* Rafraîchit ce qui est porté sur la sphère, sans rien redemander au réseau. */
+function glMaj(){
+  if(!glMap || !glMap.isStyleLoaded()) return;
+  try{
+    const ev=glMap.getSource("ev"); if(ev) ev.setData(glDonnees());
+    const nu=glMap.getSource("nuit"); if(nu) nu.setData(polygoneNuit());
+  }catch(e){}
+}
+
+function fermeGlobe(){
+  if(!glOuvert) return;
+  glOuvert=false;
+  if(glRaf){ cancelAnimationFrame(glRaf); glRaf=0; }
+  if(glVeille){ clearTimeout(glVeille); glVeille=0; }
+  glFermeFiche();
+  const box=$("#globe");
+  box.classList.remove("on","load");
+  box.setAttribute("aria-hidden","true");
+  /* La mémoire vidéo est RENDUE. Garder une carte 3D en sommeil derrière une
+     superposition masquée retient un contexte WebGL et ses textures — sur une
+     machine modeste, c'est exactement ce qui finit par tout ralentir. */
+  if(glMap){ try{ glMap.remove(); }catch(e){} glMap=null; }
+  setTimeout(()=>{ map.invalidateSize(); }, 60);
+}
+
+if(!GL_DISPO){ const b=$("#globebtn"); if(b) b.style.display="none"; }
+$("#globebtn").addEventListener("click", ()=>{ glOuvert ? fermeGlobe() : ouvreGlobe(); });
+$("#gl-close").addEventListener("click", fermeGlobe);
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && glOuvert) fermeGlobe(); });
+
+$("#gl-spin").addEventListener("click", e=>{
+  glRotation=!glRotation;
+  e.currentTarget.setAttribute("aria-pressed", String(glRotation));
+  glDernierGeste=Date.now();
+});
+$("#gl-night").addEventListener("click", e=>{
+  if(!glMap) return;
+  const on=e.currentTarget.getAttribute("aria-pressed")!=="true";
+  e.currentTarget.setAttribute("aria-pressed", String(on));
+  try{ glMap.setLayoutProperty("nuit","visibility", on?"visible":"none"); }catch(_){}
+});
+$("#gl-relief").addEventListener("click", e=>{
+  if(!glMap) return;
+  const on=e.currentTarget.getAttribute("aria-pressed")!=="true";
+  e.currentTarget.setAttribute("aria-pressed", String(on));
+  try{
+    if(on){
+      /* Les tuiles d'élévation ne sont demandées qu'ici : elles pèsent une
+         centaine de kilo-octets pièce, on ne les impose à personne. */
+      if(!glMap.getSource("relief")) glMap.addSource("relief",{
+        type:"raster-dem", tileSize:256, maxzoom:12, encoding:"terrarium",
+        tiles:["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
+        attribution:"Tuiles d’élévation AWS · SRTM, ASTER, GMTED"});
+      glMap.setTerrain({source:"relief", exaggeration:1.35});
+      if(glMap.getZoom()<4.2) glMap.easeTo({zoom:5.2, pitch:58, duration:1400});
+      else glMap.easeTo({pitch:58, duration:900});
+    }else{
+      glMap.setTerrain(null);
+      glMap.easeTo({pitch:0, duration:700});
+    }
+  }catch(_){}
+  glDernierGeste=Date.now();
+});
+
+/* Un clic sur « voir sur la carte détaillée » depuis la fiche du globe. */
+$("#gl-info").addEventListener("click", e=>{
+  const a=e.target.closest("[data-go]"); if(!a) return;
+  const [la,lo]=a.dataset.go.split(",").map(Number);
+  fermeGlobe();
+  if(isFinite(la)&&isFinite(lo)) map.setView([la,lo], 9);
+});
+
+/* Le globe suit les données de la carte, sans jamais rien redemander lui-même. */
+setInterval(()=>{ if(glOuvert) glMaj(); }, 60000);
 </script>
 </body>
 </html>
